@@ -1,0 +1,8 @@
+[project]
+name = "neuromelody-api"
+version = "0.1.0"
+description = "NeuroMelody API: identity, sessions and language model support."
+license = "MIT"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
