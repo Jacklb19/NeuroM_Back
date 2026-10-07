@@ -21,6 +21,18 @@ FastAPI en funciones Python de Vercel (plan Hobby) y Supabase (plan Free), con p
 
 Las variables se documentan en `.env.example`, solo con sus nombres. Los valores reales se configuran en `.env` (local) y en las variables de entorno del proyecto de Vercel; nunca se versionan.
 
+## Base de datos
+
+El esquema vive como migraciones SQL en `supabase/migrations/`: `profiles`, `plans`, `sessions`, `session_metrics` y `model_versions`. Todas las tablas tienen seguridad a nivel de fila (RLS), y una prueba lo comprueba. Las migraciones se prueban en local; nunca se aplican a la base remota sin aprobación.
+
+## Pruebas
+
+```bash
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-dev.txt   # en Linux o macOS: .venv/bin/python
+.venv/Scripts/python -m pytest
+```
+
 ## Ramas
 
 - `main`: versión estable y entregable.
