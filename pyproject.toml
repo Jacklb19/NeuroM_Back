@@ -3,6 +3,9 @@ name = "neuromelody-api"
 version = "0.1.0"
 description = "NeuroMelody API: identity, sessions and language model support."
 license = "MIT"
+requires-python = ">=3.13"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Lets tests import the app package however pytest is launched.
+pythonpath = ["."]

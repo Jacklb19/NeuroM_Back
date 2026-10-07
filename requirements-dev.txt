@@ -1,7 +1,21 @@
 # Development and test dependencies, pinned with their transitive packages.
+# Runtime packages come from requirements.txt so both files never disagree.
+-r requirements.txt
+
+# Test runner.
 colorama==0.4.6 ; sys_platform == "win32"
 iniconfig==2.3.1
 packaging==26.3
 pluggy==1.6.0
 Pygments==2.21.0
 pytest==9.1.1
+
+# HTTP client that FastAPI's TestClient is built on.
+certifi==2026.7.22
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+
+# ASGI server for running the API locally (Vercel provides its own in production).
+click==8.5.0
+uvicorn==0.54.0
