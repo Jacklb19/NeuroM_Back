@@ -6,7 +6,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.constants import API_PREFIX, CORS_ALLOWED_HEADERS, CORS_ALLOWED_METHODS, HEALTH_PATH
-from tests.fakes import ALLOWED_ORIGIN, DISALLOWED_ORIGIN, LOCAL_ORIGIN
+from tests.fakes import (
+    ALLOWED_ORIGIN,
+    DISALLOWED_ORIGIN,
+    LOCAL_ORIGIN,
+    LOOKALIKE_PREVIEW_ORIGINS,
+    PREVIEW_ORIGIN,
+)
 
 HEALTH_URL = f"{API_PREFIX}{HEALTH_PATH}"
 ALLOW_ORIGIN = "access-control-allow-origin"
@@ -22,7 +28,7 @@ def preflight_headers(origin: str) -> dict[str, str]:
     }
 
 
-@pytest.mark.parametrize("origin", [ALLOWED_ORIGIN, LOCAL_ORIGIN])
+@pytest.mark.parametrize("origin", [ALLOWED_ORIGIN, LOCAL_ORIGIN, PREVIEW_ORIGIN])
 def test_allowed_origin_is_echoed(client: TestClient, origin: str) -> None:
     response = client.get(HEALTH_URL, headers={"Origin": origin})
 
@@ -30,8 +36,9 @@ def test_allowed_origin_is_echoed(client: TestClient, origin: str) -> None:
     assert ALLOW_CREDENTIALS not in response.headers
 
 
-def test_disallowed_origin_gets_no_cors_header(client: TestClient) -> None:
-    response = client.get(HEALTH_URL, headers={"Origin": DISALLOWED_ORIGIN})
+@pytest.mark.parametrize("origin", [DISALLOWED_ORIGIN, *LOOKALIKE_PREVIEW_ORIGINS])
+def test_disallowed_origin_gets_no_cors_header(client: TestClient, origin: str) -> None:
+    response = client.get(HEALTH_URL, headers={"Origin": origin})
 
     assert ALLOW_ORIGIN not in response.headers
 

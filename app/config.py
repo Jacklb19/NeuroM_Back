@@ -12,6 +12,8 @@ from functools import lru_cache
 from typing import Final
 from urllib.parse import urlsplit
 
+import re
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -20,9 +22,16 @@ from pydantic import (
     SecretStr,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
-from app.constants import ALLOWED_ORIGIN_SCHEMES, ALLOWED_ORIGINS_SEPARATOR
+from app.constants import (
+    ALLOWED_ORIGIN_SCHEMES,
+    ALLOWED_ORIGINS_SEPARATOR,
+    VERCEL_PREVIEW_DOMAIN,
+    VERCEL_PREVIEW_HASH_PATTERN,
+    VERCEL_PREVIEW_SLUG_PATTERN,
+)
 
 _DEFAULT_PORTS: Final = {"http": 80, "https": 443}
 """Ports a browser omits from the Origin header, so an origin must omit them too."""
@@ -43,6 +52,30 @@ class Settings(BaseModel):
     supabase_service_role_key: SecretStr = Field(min_length=1)
     groq_api_key: SecretStr = Field(min_length=1)
     allowed_origins: tuple[str, ...] = Field(min_length=1)
+    vercel_preview_project: str | None = Field(default=None, pattern=f"^{VERCEL_PREVIEW_SLUG_PATTERN}$")
+    vercel_preview_team: str | None = Field(default=None, pattern=f"^{VERCEL_PREVIEW_SLUG_PATTERN}$")
+
+    @model_validator(mode="after")
+    def _preview_needs_project_and_team(self) -> "Settings":
+        """A preview pattern needs both halves; one alone would be ambiguous."""
+        if (self.vercel_preview_project is None) != (self.vercel_preview_team is None):
+            raise ValueError("VERCEL_PREVIEW_PROJECT and VERCEL_PREVIEW_TEAM go together")
+        return self
+
+    @property
+    def preview_origin_regex(self) -> str | None:
+        """Origins of this project's Vercel previews, or None when previews are off.
+
+        Only the per-deployment form ``https://<project>-<hash>-<team>.vercel.app``
+        matches: the fixed-length hash keeps another team's look-alike URL out,
+        and branch aliases (whose middle part anyone can choose) are excluded.
+        """
+        if self.vercel_preview_project is None or self.vercel_preview_team is None:
+            return None
+        project = re.escape(self.vercel_preview_project)
+        team = re.escape(self.vercel_preview_team)
+        domain = re.escape(VERCEL_PREVIEW_DOMAIN)
+        return rf"https://{project}-{VERCEL_PREVIEW_HASH_PATTERN}-{team}\.{domain}"
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -129,7 +162,8 @@ def is_bare_origin(value: str) -> bool:
 def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
     """Build ``Settings`` from ``environ``, or raise ``SettingsError`` naming every problem.
 
-    Blank variables count as missing. The pydantic error is not chained
+    Blank variables count as missing when the field is required; an optional
+    one is simply left out. The pydantic error is not chained
     (``from None``) because its text includes the rejected values, which may
     be secrets.
     """
@@ -140,7 +174,7 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         value = environ.get(name, "").strip()
         if value:
             values[field_name] = value
-        else:
+        elif Settings.model_fields[field_name].is_required():
             missing.append(name)
     try:
         return Settings.model_validate(values)
@@ -152,7 +186,8 @@ def _invalid_reasons(error: ValidationError, skip: Sequence[str]) -> dict[str, s
     """Map each rejected variable to pydantic's reason, leaving out the input values."""
     reasons: dict[str, list[str]] = {}
     for detail in error.errors(include_input=False, include_url=False):
-        name = env_var_name(str(detail["loc"][0]))
+        # A rule across fields has no location; its message names the variables.
+        name = env_var_name(str(detail["loc"][0])) if detail["loc"] else "SETTINGS"
         if name not in skip:
             reasons.setdefault(name, []).append(detail["msg"])
     return {name: "; ".join(messages) for name, messages in reasons.items()}

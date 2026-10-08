@@ -45,6 +45,7 @@ Las cuatro variables son obligatorias. `.env.example` las lista sin valores; los
 | `SUPABASE_SERVICE_ROLE_KEY` | Clave secreta de Supabase. Solo vive en el servidor. |
 | `GROQ_API_KEY` | Clave del modelo de lenguaje (ADR-08). Solo vive en el servidor. |
 | `ALLOWED_ORIGINS` | Orígenes del frontend autorizados por CORS, separados por comas, por ejemplo `https://<frontend>.vercel.app,http://localhost:5173`. |
+| `VERCEL_PREVIEW_PROJECT`, `VERCEL_PREVIEW_TEAM` | Opcionales, juntas: nombre del proyecto de Vercel del frontend y slug del equipo. Autorizan solo `https://<proyecto>-<hash de 9>-<equipo>.vercel.app`, las vistas previas de ese proyecto. |
 
 Cada origen se escribe exactamente como lo envía el navegador: `http` o `https`, en minúsculas, sin comodines, sin ruta ni barra final y sin puerto por defecto. El navegador compara el origen carácter por carácter, así que la API rechaza al arrancar cualquier otra forma en lugar de ignorarla en silencio. CORS no admite credenciales: la identidad viaja como JWT en la cabecera `Authorization` (ADR-19).
 
@@ -88,7 +89,7 @@ Dependencias: `requirements.txt` contiene solo las de ejecución, fijadas con to
 El despliegue lo dispara el push a GitHub mediante la integración Git de Vercel; ningún agente despliega ni cambia variables remotas.
 
 - **Proyecto:** uno propio para este repositorio (ADR-19), con *Root Directory* en la raíz del repositorio. Vercel detecta FastAPI en `app/main.py`, instala `requirements.txt` y usa Python 3.13 por `.python-version`.
-- **Variables:** definir las cuatro de la tabla anterior en *Settings → Environment Variables* del proyecto. `ALLOWED_ORIGINS` lleva el dominio de producción del frontend.
+- **Variables:** definir las variables de la tabla anterior en *Settings → Environment Variables* del proyecto. `ALLOWED_ORIGINS` lleva el dominio de producción del frontend.
 - **`maxDuration`: 10 s.** El estado del servicio y las operaciones de datos responden en menos de un segundo, más el arranque en frío de Python; 10 s deja margen de sobra y corta pronto una llamada colgada a Supabase en lugar de consumir hasta el máximo del plan (300 s según la Tabla 16). Se revisará al implementar el plan y el resumen con el modelo de lenguaje, si su latencia con reintentos lo exige.
 - **`excludeFiles`:** las pruebas, el entorno virtual y las migraciones no entran en el paquete de la función.
 - **Comprobación tras desplegar:** `GET https://<backend>.vercel.app/v1/health`.
