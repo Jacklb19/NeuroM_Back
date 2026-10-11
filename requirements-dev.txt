@@ -10,11 +10,11 @@ pluggy==1.6.0
 Pygments==2.21.0
 pytest==9.1.1
 
-# HTTP client that FastAPI's TestClient is built on.
-certifi==2026.7.22
+# HTTP client that FastAPI's TestClient is built on (Starlette 1.7 recommends httpx2).
 h11==0.16.0
-httpcore==1.0.9
-httpx==0.28.1
+httpcore2==2.13.1
+httpx2==2.13.1
+truststore==0.10.4
 
 # ASGI server for running the API locally (Vercel provides its own in production).
 click==8.5.0

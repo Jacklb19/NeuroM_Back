@@ -23,6 +23,9 @@ from tests.fakes import (
 
 ENV_EXAMPLE = Path(__file__).resolve().parent.parent / ".env.example"
 VARIABLE_NAMES = tuple(env_var_name(field) for field in Settings.model_fields)
+REQUIRED_NAMES = tuple(
+    env_var_name(name) for name, field in Settings.model_fields.items() if field.is_required()
+)
 
 
 def env_example_names() -> set[str]:
@@ -58,13 +61,13 @@ def test_empty_environment_names_every_variable() -> None:
     with pytest.raises(SettingsError) as raised:
         load_settings({})
 
-    assert raised.value.missing == VARIABLE_NAMES
+    assert raised.value.missing == REQUIRED_NAMES
     assert not raised.value.invalid
-    for name in VARIABLE_NAMES:
+    for name in REQUIRED_NAMES:
         assert name in str(raised.value)
 
 
-@pytest.mark.parametrize("name", VARIABLE_NAMES)
+@pytest.mark.parametrize("name", REQUIRED_NAMES)
 @pytest.mark.parametrize("absent_value", [None, "", "   "])
 def test_each_absent_or_blank_variable_is_named(name: str, absent_value: str | None) -> None:
     environ = fake_environ()
@@ -166,3 +169,17 @@ def test_rejects_anything_but_a_bare_origin(origin: str) -> None:
     assert not is_bare_origin(origin)
     with pytest.raises(ValidationError):
         Settings.model_validate(dict(FAKE_VALUES) | {"allowed_origins": origin})
+
+
+def test_preview_variables_go_together() -> None:
+    environ = fake_environ()
+    del environ["VERCEL_PREVIEW_TEAM"]
+
+    with pytest.raises(SettingsError):
+        load_settings(environ)
+
+
+def test_previews_are_optional() -> None:
+    environ = {name: value for name, value in fake_environ().items() if not name.startswith("VERCEL_PREVIEW_")}
+
+    assert load_settings(environ).preview_origin_regex is None

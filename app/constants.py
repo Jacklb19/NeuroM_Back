@@ -22,6 +22,15 @@ HEALTH_PATH: Final = "/health"
 ALLOWED_ORIGINS_SEPARATOR: Final = ","
 """Separator between origins in the ``ALLOWED_ORIGINS`` environment variable."""
 
+VERCEL_PREVIEW_SLUG_PATTERN: Final = r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+"""Shape of a Vercel project name or team slug, as it appears in a preview URL."""
+
+VERCEL_PREVIEW_HASH_PATTERN: Final = r"[a-z0-9]{9}"
+"""Deployment hash Vercel puts between the project and the team in a preview URL."""
+
+VERCEL_PREVIEW_DOMAIN: Final = "vercel.app"
+"""Domain of Vercel's preview deployments."""
+
 ALLOWED_ORIGIN_SCHEMES: Final = frozenset({"http", "https"})
 """Schemes accepted for a CORS origin: https in production, http for local development."""
 
