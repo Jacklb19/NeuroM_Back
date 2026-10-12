@@ -18,18 +18,22 @@ from app.constants import (
     CORS_PREFLIGHT_MAX_AGE_SECONDS,
 )
 from app.errors import UnexpectedErrorMiddleware, exception_handlers, openapi_error_responses
+from app.language_model import LanguageModelGateway
 from app.routes import API_ROUTERS
 from app.security import TokenVerifier, issuer_of
 from app.supabase import SupabaseGateway
 
 
 def create_app(
-    settings: Settings | None = None, supabase_transport: httpx2.AsyncBaseTransport | None = None
+    settings: Settings | None = None,
+    supabase_transport: httpx2.AsyncBaseTransport | None = None,
+    language_model_transport: httpx2.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """Create the API configured by ``settings`` (the environment when omitted).
 
-    ``supabase_transport`` replaces the network when calling Supabase; tests
-    pass one that answers in memory.
+    ``supabase_transport`` and ``language_model_transport`` replace the network
+    when calling Supabase and the language model; tests pass ones that answer
+    in memory, so no test ever reaches a real service.
 
     Raises ``SettingsError`` when the environment is incomplete, so a broken
     deployment fails at boot instead of on its first request.
@@ -52,6 +56,7 @@ def create_app(
     # are reused across requests while the function stays warm.
     app.state.supabase = SupabaseGateway(resolved, supabase_transport)
     app.state.token_verifier = TokenVerifier(app.state.supabase, issuer_of(str(resolved.supabase_url)))
+    app.state.language_model = LanguageModelGateway(resolved, language_model_transport)
     # The middleware added last is the outermost. The catch-all goes first so
     # CORSMiddleware wraps it and an unexpected 500 still reaches the browser.
     app.add_middleware(UnexpectedErrorMiddleware)

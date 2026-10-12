@@ -1,6 +1,12 @@
 """Step 2: train the activation classifier, evaluate it honestly and export it.
 
-Usage:  python train.py <output json>
+Usage:  python train.py <output json> [--collected <exported json>]
+
+With ``--collected``, the guided recordings exported by the app (see
+``collected.py``) join the training, and the file says whether the result
+may be released: only with enough people of the app, and only when it does
+at least as well as the model trained without them, both on those people
+and on WESAD. Nothing is published from here; that is a person's decision.
 
 Evaluation is leave-one-subject-out: the model is trained on fourteen people
 and tested on the one it never saw, fifteen times. That is the question the
@@ -19,6 +25,7 @@ right about 80 % of the time. It never changes which class wins.
 
 import json
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
@@ -33,6 +40,7 @@ from sklearn.metrics import balanced_accuracy_score, confusion_matrix, f1_score
 from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+from collected import read_export
 from extract import read_cached
 from features import CLASSES, FEATURE_NAMES, Examples, examples_of, rule_classes
 from wesad import SUBJECT_IDS
@@ -45,6 +53,17 @@ SEED: Final = 7
 
 CONFIDENCE_BINS: Final = (0.0, 0.5, 0.7, 0.85, 1.0001)
 """Edges of the reliability table: how often the model is right at each level of confidence."""
+
+MIN_COLLECTED_PARTICIPANTS: Final = 5
+"""People of the app needed before a model trained with their recordings may be released."""
+
+WESAD_TOLERANCE: Final = 0.01
+"""Balanced accuracy on WESAD a new model may lose, at most, against the one trained on WESAD alone."""
+
+WESAD_CITATION: Final = (
+    "Schmidt, Reiss, Duerichen, Marberger, Van Laerhoven. Introducing WESAD, a Multimodal "
+    "Dataset for Wearable Stress and Affect Detection. ICMI 2018."
+)
 
 
 def logistic() -> Pipeline:
@@ -117,15 +136,27 @@ def reliability(truth: NDArray, predicted: NDArray, probabilities: NDArray) -> l
     return table
 
 
-def main() -> None:
-    if len(sys.argv) != 2:
-        raise SystemExit(__doc__)
-    output = Path(sys.argv[1])
+@dataclass(frozen=True)
+class Trained:
+    """A model trained on some subjects, with its honest evaluation."""
 
-    subjects = [examples_of(read_cached(subject)) for subject in SUBJECT_IDS]
-    counts = np.bincount(np.concatenate([s.classes for s in subjects]), minlength=len(CLASSES))
-    print("examples per class:", dict(zip(CLASSES, counts.tolist(), strict=True)))
+    subjects: list[Examples]
+    truth: NDArray
+    predicted: NDArray
+    """Leave-one-subject-out predictions, in the order of ``subjects``."""
+    temperature: float
+    report: dict[str, object]
+    final: Pipeline
+    """Fitted on every subject: the model that would ship."""
 
+    def balanced_accuracy_of(self, wanted: set[int]) -> float:
+        """Balanced accuracy over the held-out predictions of some subjects."""
+        chosen = [(t, p) for subject, t, p in _by_subject(self.subjects, self.truth, self.predicted) if subject.subject in wanted]
+        return float(balanced_accuracy_score(np.concatenate([t for t, _ in chosen]), np.concatenate([p for _, p in chosen])))
+
+
+def train(subjects: list[Examples]) -> Trained:
+    """Evaluate leaving one subject out, calibrate the confidence and fit the model on everyone."""
     truth, predicted, scores = leave_one_subject_out(subjects, logistic)
     model_metrics = summarise(truth, predicted)
     temperature = fit_temperature(truth, scores)
@@ -136,7 +167,6 @@ def main() -> None:
         f"S{s.subject}": round(float(balanced_accuracy_score(t, p)), 4)
         for s, t, p in _by_subject(subjects, truth, predicted)
     }
-
     report = {
         "evaluation": "leave-one-subject-out",
         "model": model_metrics,
@@ -146,26 +176,26 @@ def main() -> None:
         "reliabilityBeforeCalibration": reliability(truth, predicted, softmax(scores, axis=1)),
         "reliability": reliability(truth, predicted, probabilities),
     }
-    print(json.dumps(report, indent=2))
-
     # The shipped model is trained on everyone; the figures above describe how it generalises.
     final = logistic()
     final.fit(np.vstack([s.features for s in subjects]), np.concatenate([s.classes for s in subjects]))
-    scaler: StandardScaler = final.named_steps["standardscaler"]
-    regression: LogisticRegression = final.named_steps["logisticregression"]
-    artifact = {
+    return Trained(subjects, truth, predicted, temperature, report, final)
+
+
+def class_counts(subjects: list[Examples]) -> dict[str, int]:
+    counts = np.bincount(np.concatenate([s.classes for s in subjects]), minlength=len(CLASSES))
+    return dict(zip(CLASSES, counts.tolist(), strict=True))
+
+
+def artifact_of(trained: Trained, dataset: dict[str, object]) -> dict[str, object]:
+    """The JSON file the app reads (front/src/features/adaptation/classifier/activationModel.ts)."""
+    scaler: StandardScaler = trained.final.named_steps["standardscaler"]
+    regression: LogisticRegression = trained.final.named_steps["logisticregression"]
+    return {
         "schemaVersion": SCHEMA_VERSION,
         "kind": "multinomial_logistic_regression",
         "trainedAt": datetime.now(UTC).strftime("%Y-%m-%d"),
-        "dataset": {
-            "name": "WESAD",
-            "citation": (
-                "Schmidt, Reiss, Duerichen, Marberger, Van Laerhoven. Introducing WESAD, a Multimodal "
-                "Dataset for Wearable Stress and Affect Detection. ICMI 2018."
-            ),
-            "subjects": len(subjects),
-            "examplesPerClass": dict(zip(CLASSES, counts.tolist(), strict=True)),
-        },
+        "dataset": dataset,
         "features": list(FEATURE_NAMES),
         "classes": list(CLASSES),
         # probability = softmax((weights . ((x - mean) / scale) + bias) / temperature), one row of weights per class.
@@ -173,9 +203,92 @@ def main() -> None:
         "scale": [round(float(v), 6) for v in scaler.scale_],
         "weights": [[round(float(v), 6) for v in row] for row in regression.coef_],
         "bias": [round(float(v), 6) for v in regression.intercept_],
-        "temperature": round(temperature, 4),
-        "metrics": report,
+        "temperature": round(trained.temperature, 4),
+        "metrics": trained.report,
     }
+
+
+def release_decision(wesad_only: Trained, with_collected: Trained, collected: list[Examples]) -> dict[str, object]:
+    """Whether the model trained with the app's recordings may be released, and why.
+
+    The people of the app are the fair test: the model trained on WESAD alone
+    never saw them, and the new one predicts each of them without having seen
+    that person. The new model must do at least as well there and must not
+    get worse on WESAD.
+    """
+    own = {examples.subject for examples in collected}
+    wesad = {examples.subject for examples in wesad_only.subjects}
+    truth = np.concatenate([examples.classes for examples in collected])
+    before = float(balanced_accuracy_score(truth, wesad_only.final.predict(np.vstack([e.features for e in collected]))))
+    after = with_collected.balanced_accuracy_of(own)
+    wesad_before = wesad_only.balanced_accuracy_of(wesad)
+    wesad_after = with_collected.balanced_accuracy_of(wesad)
+    reasons = []
+    if len(collected) < MIN_COLLECTED_PARTICIPANTS:
+        reasons.append(f"only {len(collected)} people of the app; {MIN_COLLECTED_PARTICIPANTS} are needed")
+    if after < before:
+        reasons.append("it does worse on the people of the app than the model trained on WESAD alone")
+    if wesad_after < wesad_before - WESAD_TOLERANCE:
+        reasons.append("it does worse on WESAD than the model trained on WESAD alone")
+    return {
+        "passes": not reasons,
+        "reasons": reasons,
+        "collectedParticipants": len(collected),
+        "collectedExamplesPerClass": class_counts(collected),
+        "balancedAccuracyOnCollected": {"wesadOnlyModel": round(before, 4), "thisModel": round(after, 4)},
+        "balancedAccuracyOnWesad": {"wesadOnlyModel": round(wesad_before, 4), "thisModel": round(wesad_after, 4)},
+    }
+
+
+def main() -> None:
+    arguments = sys.argv[1:]
+    collected_path = None
+    if "--collected" in arguments:
+        position = arguments.index("--collected")
+        if position + 1 >= len(arguments):
+            raise SystemExit(__doc__)
+        collected_path = Path(arguments[position + 1])
+        del arguments[position : position + 2]
+    if len(arguments) != 1:
+        raise SystemExit(__doc__)
+    output = Path(arguments[0])
+
+    wesad = [examples_of(read_cached(subject)) for subject in SUBJECT_IDS]
+    print("examples per class:", class_counts(wesad))
+    trained = train(wesad)
+    dataset: dict[str, object] = {
+        "name": "WESAD",
+        "citation": WESAD_CITATION,
+        "subjects": len(wesad),
+        "examplesPerClass": class_counts(wesad),
+    }
+    release = None
+
+    if collected_path is not None:
+        collected = read_export(collected_path.read_text(encoding="utf-8"))
+        for reason in collected.skipped:
+            print(f"skipped {reason}")
+        if collected.examples:
+            everyone = wesad + collected.examples
+            with_collected = train(everyone)
+            release = release_decision(trained, with_collected, collected.examples)
+            trained = with_collected
+            dataset = {
+                "name": "WESAD and guided recordings of the app",
+                "citation": WESAD_CITATION,
+                "subjects": len(everyone),
+                "wesadSubjects": len(wesad),
+                "collectedParticipants": len(collected.examples),
+                "examplesPerClass": class_counts(everyone),
+            }
+        else:
+            release = {"passes": False, "reasons": ["the file holds no usable recording"], "collectedParticipants": 0}
+
+    print(json.dumps(trained.report, indent=2))
+    artifact = artifact_of(trained, dataset)
+    if release is not None:
+        artifact["release"] = release
+        print("release:", json.dumps(release, indent=2))
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
     print(f"model written to {output}")

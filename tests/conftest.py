@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings, get_settings
 from app.factory import create_app
 from tests.fakes import FAKE_VALUES
+from tests.language_model_fake import FakeLanguageModel
 from tests.supabase_fake import KEY_ID, FakeSupabase, SigningKey
 
 
@@ -29,8 +30,13 @@ def supabase(signing_key: SigningKey) -> FakeSupabase:
 
 
 @pytest.fixture
-def app(settings: Settings, supabase: FakeSupabase) -> FastAPI:
-    return create_app(settings, supabase.transport)
+def language_model() -> FakeLanguageModel:
+    return FakeLanguageModel()
+
+
+@pytest.fixture
+def app(settings: Settings, supabase: FakeSupabase, language_model: FakeLanguageModel) -> FastAPI:
+    return create_app(settings, supabase.transport, language_model.transport)
 
 
 @pytest.fixture

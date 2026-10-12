@@ -7,7 +7,7 @@ API (RNF-07). Unknown fields are rejected, so a typo cannot be stored.
 """
 
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
@@ -16,8 +16,12 @@ from app.constants import (
     MAX_LISTENED_SECONDS,
     MAX_PLANNED_MINUTES,
     MAX_RATING,
+    MAX_RR_MS,
     MAX_SESSION_SAMPLES,
+    MAX_STAGE_BEATS,
+    MAX_STAGE_SECONDS,
     MIN_RATING,
+    RECORDING_STAGES,
 )
 
 
@@ -29,6 +33,13 @@ class Goal(StrEnum):
     CALM_AFTER_ACTIVITY = "calm_after_activity"
     SLOW_BREATHING = "slow_breathing"
     PAUSE = "pause"
+
+
+class Locale(StrEnum):
+    """Languages of the interface (ADR-31); generated text is written in the one the person reads."""
+
+    ES = "es"
+    EN = "en"
 
 
 class SourceKind(StrEnum):
@@ -119,3 +130,85 @@ class SavedSession(BaseModel):
     created: bool
     """False when the session was already stored: sending it again changes nothing
     but the rating given after listening."""
+
+
+BeatTime = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+BeatInterval = Annotated[float, Field(gt=0, le=MAX_RR_MS, allow_inf_nan=False)]
+
+
+class RecordingStage(_Strict):
+    """One stage of a guided recording: its label and the heartbeats recorded during it."""
+
+    label: Literal["rest", "slow_breathing", "demanding_task"]
+    planned_seconds: int = Field(ge=1, le=MAX_STAGE_SECONDS)
+    beat_times_ms: list[BeatTime] = Field(max_length=MAX_STAGE_BEATS)
+    """When each beat ended, in milliseconds since the stage started."""
+    rr_ms: list[BeatInterval] = Field(max_length=MAX_STAGE_BEATS)
+    """Interval that ended at each beat."""
+
+    @model_validator(mode="after")
+    def _is_consistent(self) -> Self:
+        if len(self.beat_times_ms) != len(self.rr_ms):
+            raise ValueError("every beat needs its time and its interval")
+        if any(later < earlier for earlier, later in zip(self.beat_times_ms, self.beat_times_ms[1:], strict=False)):
+            raise ValueError("beat times cannot go backwards")
+        if self.beat_times_ms and self.beat_times_ms[-1] > self.planned_seconds * 1000:
+            raise ValueError("a beat cannot end after its stage")
+        return self
+
+
+class TrainingRecording(_Strict):
+    """A guided recording a person sends for training (ADR-33): the body of ``POST /v1/recordings``.
+
+    It carries no name and no email: ``participant`` is a random code of
+    the device that only groups the recordings of one person.
+    """
+
+    id: UUID
+    participant: UUID
+    recorded_at: AwareDatetime
+    source_kind: Literal[SourceKind.BLE, SourceKind.CAMERA]
+    """Only sources that measure a person; the simulator and the samples teach nothing."""
+    segments: list[RecordingStage] = Field(min_length=len(RECORDING_STAGES), max_length=len(RECORDING_STAGES))
+    consent: bool
+    """The person agreed to send this recording. Nothing is stored without it."""
+
+    @model_validator(mode="after")
+    def _has_the_protocol_in_order(self) -> Self:
+        if tuple(stage.label for stage in self.segments) != RECORDING_STAGES:
+            raise ValueError("a recording has the stages of the protocol, in order")
+        return self
+
+
+class RecordingSummary(_Strict):
+    """A recording the person sent, without its heartbeats."""
+
+    id: UUID
+    recorded_at: AwareDatetime
+    source_kind: SourceKind
+    beats: int = Field(ge=0)
+
+
+class RecordingList(BaseModel):
+    """The recordings the person sent, newest first."""
+
+    recordings: list[RecordingSummary]
+
+
+class SavedRecording(BaseModel):
+    """Answer to a recording that was sent."""
+
+    id: UUID
+    created: bool
+    """False when the recording was already stored."""
+
+
+class ClassifierVersion(_Strict):
+    """A published version of the activation classifier, with its file."""
+
+    version: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    published_at: AwareDatetime
+    model: dict[str, Any]
+    """The file the app runs. ``Any`` mirrors its JSON: the app validates every field before using it."""
+

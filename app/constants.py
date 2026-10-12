@@ -25,6 +25,32 @@ SESSIONS_PATH: Final = "/sessions"
 ACCOUNT_PATH: Final = "/account"
 """The signed-in person's account (ADR-18: ``DELETE /v1/account``)."""
 
+RECORDINGS_PATH: Final = "/recordings"
+"""Guided recordings a person sends for training (ADR-33), relative to ``API_PREFIX``."""
+
+CLASSIFIER_PATH: Final = "/models/classifier"
+"""The latest published version of the classifier (Table 15)."""
+
+RECORDING_STAGES: Final = ("rest", "slow_breathing", "demanding_task")
+"""Stages of a guided recording, in order. Mirrors the frontend's ``COLLECTION_STAGE_IDS``
+(src/features/collection/collectionProtocol.ts) and ``training/collected.py``."""
+
+MAX_STAGE_SECONDS: Final = 3600
+"""Longest stage accepted in a recording; the protocol's longest lasts five minutes."""
+
+MAX_STAGE_BEATS: Final = 12_000
+"""Most heartbeats accepted in one stage: an hour at 200 beats per minute."""
+
+MAX_RR_MS: Final = 10_000.0
+"""Longest interval between two beats accepted, in milliseconds. Artefacts are kept on
+purpose (training filters them like the app does), but not absurd values."""
+
+PLAN_SUGGESTION_PATH: Final = "/plans/suggest"
+"""Plan proposed by the language model (Table 15, RF-13), relative to ``API_PREFIX``."""
+
+SESSION_SUMMARY_SUFFIX: Final = "/summary"
+"""Summary of one session written by the language model (Table 15, RF-15); follows the session path."""
+
 BEARER_SCHEME: Final = "Bearer"
 """Scheme of the ``Authorization`` header that carries the Supabase token (ADR-19)."""
 
@@ -84,6 +110,61 @@ MAX_LISTENED_SECONDS: Final = 24 * 60 * 60
 MIN_RATING: Final = 0
 MAX_RATING: Final = 10
 """Bounds of the optional self-rating before and after a session (ADR-23)."""
+
+PLAN_DURATIONS_MINUTES: Final = (10, 15, 20, 30, 45, 60)
+"""Session lengths a plan may have, in minutes. Mirrors the frontend's ``DURATIONS_MIN``
+(src/features/plan/plan.ts): the language model may only propose one of these."""
+
+LAST_HOUR_OF_DAY: Final = 23
+"""Hours of the day run from 0 to this one."""
+
+MIN_PULSE_BPM: Final = 20
+MAX_PULSE_BPM: Final = 250
+"""Bounds of a mean pulse accepted in the figures of a summary: wider than any real session."""
+
+MAX_VARIATION_MS: Final = 1000
+"""Largest variation between beats (RMSSD, in ms) accepted in the figures of a summary."""
+
+MAX_SUMMARY_MINUTES: Final = MAX_LISTENED_SECONDS // 60
+"""Most minutes a figure of a summary may state: those of the longest session accepted."""
+
+LANGUAGE_MODEL_BASE_URL: Final = "https://api.groq.com/openai/v1"
+"""Groq's OpenAI-compatible API (ADR-08)."""
+
+LANGUAGE_MODEL_CHAT_PATH: Final = "/chat/completions"
+
+LANGUAGE_MODEL: Final = "openai/gpt-oss-20b"
+"""Model that proposes the plan and writes the summary (ADR-08)."""
+
+LANGUAGE_MODEL_REASONING_EFFORT: Final = "low"
+"""How much the model thinks before answering. Both tasks are short and closed."""
+
+LANGUAGE_MODEL_MAX_OUTPUT_TOKENS: Final = 1024
+"""Limit of generated tokens (ADR-08). The model's own reasoning counts towards it,
+so it sits well above the few sentences that are returned."""
+
+LANGUAGE_MODEL_TEMPERATURE: Final = 0.3
+"""Low, so the same figures read much the same every time."""
+
+LANGUAGE_MODEL_TIMEOUT_SECONDS: Final = 8.0
+"""Longest wait for one answer of the language model."""
+
+LANGUAGE_MODEL_MAX_RETRY_WAIT_SECONDS: Final = 3.0
+"""Longest wait the API accepts before its single retry, when the model says it is busy
+(ADR-08). Two attempts, this wait and a slow database read still fit in the function's
+``maxDuration`` (vercel.json). A longer wait is answered as unavailable instead."""
+
+LANGUAGE_MODEL_CACHE_SECONDS: Final = 3600
+"""How long an answer is reused for the same question (ADR-08), while the function stays warm."""
+
+LANGUAGE_MODEL_CACHE_ENTRIES: Final = 256
+"""Most answers kept; the oldest is dropped first."""
+
+PLAN_NOTE_MAX_CHARS: Final = 200
+"""Longest note accepted with a proposed plan: one sentence."""
+
+SUMMARY_MAX_CHARS: Final = 700
+"""Longest summary accepted: a few sentences."""
 
 ALLOWED_ORIGINS_SEPARATOR: Final = ","
 """Separator between origins in the ``ALLOWED_ORIGINS`` environment variable."""

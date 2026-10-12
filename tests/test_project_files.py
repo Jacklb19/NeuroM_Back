@@ -5,14 +5,20 @@ import tomllib
 from pathlib import Path
 from typing import Final
 
-from app.constants import API_VERSION
+from app.constants import (
+    API_VERSION,
+    LANGUAGE_MODEL_MAX_RETRY_WAIT_SECONDS,
+    LANGUAGE_MODEL_TIMEOUT_SECONDS,
+    SUPABASE_TIMEOUT_SECONDS,
+)
 
 ROOT: Final = Path(__file__).resolve().parent.parent
 ENTRYPOINT: Final = "app/main.py"
 REQUIREMENT_FILES: Final = ("requirements.txt", "requirements-dev.txt")
-EXCLUDED_DIRS: Final = ("tests", ".venv", "supabase")
+EXCLUDED_DIRS: Final = ("tests", ".venv", "supabase", "training", "tools")
 """Directories that must stay out of the function bundle: test code, the local
-environment and the SQL migrations, none of which the API runs."""
+environment, the SQL migrations, the training of the classifier and the manual
+checks, none of which the API runs."""
 
 
 def read_pyproject() -> dict[str, object]:
@@ -43,6 +49,9 @@ def test_vercel_function_points_to_the_entrypoint_with_explicit_limits() -> None
     assert (ROOT / ENTRYPOINT).is_file()
     assert isinstance(function["maxDuration"], int)
     assert function["maxDuration"] > 0
+    # Two tries of the language model, the wait between them and a slow database read must fit.
+    slowest = SUPABASE_TIMEOUT_SECONDS + 2 * LANGUAGE_MODEL_TIMEOUT_SECONDS + LANGUAGE_MODEL_MAX_RETRY_WAIT_SECONDS
+    assert function["maxDuration"] > slowest
     # Vercel takes a single glob here, so the directories are joined in a brace group.
     assert function["excludeFiles"] == "{" + ",".join(EXCLUDED_DIRS) + "}/**"
 
