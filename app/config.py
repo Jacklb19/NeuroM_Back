@@ -49,6 +49,9 @@ class Settings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     supabase_url: HttpUrl
+    supabase_anon_key: str = Field(min_length=1)
+    """Public key of the project, the one the frontend also has. It only identifies
+    the project to Supabase: what a request may do comes from the person's token."""
     supabase_service_role_key: SecretStr = Field(min_length=1)
     groq_api_key: SecretStr = Field(min_length=1)
     allowed_origins: tuple[str, ...] = Field(min_length=1)

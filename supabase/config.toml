@@ -1,0 +1,7 @@
+# Local Supabase stack, used only to try the migrations with Docker before they
+# are applied to the real project (see README). It holds no secret and is never
+# linked to a remote project.
+project_id = "neuromelody-local"
+
+[db]
+major_version = 17
