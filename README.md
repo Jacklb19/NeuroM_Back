@@ -25,16 +25,26 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 | `GET /sessions/{id}` | Una sesión con sus indicadores. | 200 | 404 `not_found` |
 | `DELETE /sessions/{id}` | Borra una sesión y sus indicadores. | 204 | 404 `not_found` |
 | `DELETE /account` | Borra la cuenta de quien llama y, en cascada, todo lo suyo. | 204 | |
+| `POST /recordings` | Guarda una grabación guiada que la persona acepta enviar para entrenar el modelo. | 201 si la crea; 200 si ya existía | 403 `consent_required` |
+| `GET /recordings` | Lista las grabaciones enviadas, sin los latidos. | 200 | |
+| `DELETE /recordings/{id}` | Retira una grabación enviada. | 204 | 404 `not_found` |
+| `GET /models/classifier` | La última versión publicada del clasificador, con su archivo. Basta una cuenta. | 200 | 404 `not_found` si no hay ninguna publicada |
 | `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 502 `language_model_unavailable` |
 | `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 502 `language_model_unavailable` |
 
 Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no verifica), 403 `second_factor_required`, 422 `invalid_request` y 502 `storage_unavailable` (Supabase no respondió o respondió algo inesperado).
 
 - **Identidad (ADR-19):** el token se verifica con las claves públicas del proyecto de Supabase (firma ES256, emisor, audiencia y caducidad). Las claves se descargan una vez y se reutilizan. Cualquier fallo responde lo mismo, sin decir por qué.
-- **Segundo factor (ADR-10):** las cuatro rutas de sesiones exigen que el token diga `aal2`. Borrar la cuenta lo exige solo si la cuenta tiene un segundo factor verificado, para que una contraseña robada no baste.
+- **Segundo factor (ADR-10):** las cuatro rutas de sesiones y las tres de grabaciones exigen que el token diga `aal2`. Borrar la cuenta lo exige solo si la cuenta tiene un segundo factor verificado, para que una contraseña robada no baste.
 - **Doble barrera:** la API llama a Supabase con el token de la persona, así que las políticas RLS vuelven a comprobar la propiedad y el segundo factor. Por eso la sesión de otra persona responde igual que una que no existe. La clave de servicio se usa únicamente para borrar la cuenta.
 - **Envío idempotente (ADR-18):** el id de la sesión lo genera el dispositivo. Enviar dos veces la misma sesión no la duplica; la segunda vez solo actualiza la valoración final, que es lo único que la persona completa después.
 - **Consentimiento:** el frontend lo guarda en `profiles.sync_consent_at` y la base de datos rechaza guardar sesiones sin él.
+
+### Grabaciones para entrenar y versiones del clasificador (ADR-32, ADR-33)
+
+- **Grabaciones:** son latidos, así que las tres rutas exigen segundo factor (`aal2`) y se guardan con el token de la persona. El cuerpo es `{"id", "participant", "recorded_at", "source_kind", "segments", "consent"}`: solo fuentes que miden a una persona (`ble` o `camera`), los tres tramos del protocolo en orden (`rest`, `slow_breathing`, `demanding_task`), cada uno con `planned_seconds`, `beat_times_ms` y `rr_ms`, y `consent: true`. Sin consentimiento responde 403 y no guarda nada. No lleva nombre ni correo: `participant` es un código al azar del dispositivo. La persona puede retirarlas cuando quiera y caen al borrar la cuenta.
+- **Clasificador:** `GET /models/classifier` devuelve `{"version", "sha256", "published_at", "model"}`. Solo sirve el archivo si coincide con la suma de comprobación registrada al publicarlo; si no, responde 502. La app valida el contenido de nuevo y, sin cuenta o sin versión publicada, usa el modelo con el que viene.
+- **Nada se entrena ni se publica desde la API.** El entrenamiento corre fuera (`training/`, flujo `train-model.yml`) y una versión solo existe cuando una persona la aprueba. Ver `training/README.md`.
 
 ### Modelo de lenguaje (ADR-05, ADR-08)
 
@@ -158,6 +168,8 @@ El esquema vive como migraciones SQL en `supabase/migrations/`, una por cambio:
 
 - `20260928000000_initial_schema.sql`: `profiles`, `plans`, `sessions`, `session_metrics` y `model_versions`, con sus políticas de propiedad.
 - `20261011000000_cloud_sessions.sql`: consentimiento en `profiles`, los campos de una sesión del dispositivo, el segundo factor (`aal2`) como política restrictiva en `sessions` y `session_metrics`, y las funciones `save_session`, `list_sessions`, `get_session` y `delete_session`, que la API llama con el token de la persona.
+
+- `20261012000000_training_recordings.sql`: `training_recordings` (grabaciones guiadas, con segundo factor y borrables por su dueño), `training_assets` (archivos del entrenamiento, solo para la clave de servicio), el archivo de cada versión en `model_versions` y las funciones `save_training_recording`, `list_training_recordings`, `delete_training_recording` y `current_classifier`. Su prueba es `supabase/tests/training_recordings_test.sql`, que se ejecuta igual que la anterior.
 
 Todas las tablas tienen seguridad a nivel de fila (RLS), y una prueba lo comprueba. Las migraciones nunca se aplican a la base remota desde aquí: se copian en el *SQL Editor* del panel de Supabase, en orden.
 

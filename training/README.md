@@ -79,10 +79,35 @@ Formato del archivo (lo escribe `front/src/features/collection/collectionRecordi
 Pruebas del lector (usan numpy, por eso corren con este entorno y no con el de la API):
 
 ```
-.venv/Scripts/python -m unittest test_collected
+.venv/Scripts/python -m unittest test_collected test_release
 ```
 
-**Lo que falta para una versión nueva del modelo** (no está hecho a propósito): `train.py` todavía no usa estas grabaciones. Antes hay que tener datos reales de varias personas y decidir cómo se combinan con WESAD (ver la propuesta P-04 en `front/docs/propuestas.md`). Al publicar una versión nueva se actualizan sus cifras en `front/docs/modelo.md`.
+## Reentrenamiento con las grabaciones de la app
+
+El modelo mejora fuera de la app, nunca dentro, y una versión nueva solo llega a la gente cuando una persona la aprueba.
+
+1. **Las grabaciones llegan solas.** Al terminar una grabación guiada, la persona puede enviarla (`POST /v1/recordings`, con su consentimiento y segundo factor). Quedan en la tabla `training_recordings`.
+2. **Entrenamiento.** `train.py <salida> --collected <archivo>` entrena con WESAD y con las grabaciones, dejando fuera a cada persona por turno. Sin `--collected` hace exactamente lo de siempre y reproduce el modelo publicado.
+3. **Control de calidad.** El archivo resultante dice si puede publicarse (`release.passes`). Solo pasa con al menos 5 personas de la app (`MIN_COLLECTED_PARTICIPANTS`), si en ellas acierta al menos igual que el modelo entrenado solo con WESAD, y si en WESAD no pierde más de un punto (`WESAD_TOLERANCE`). Las personas de la app son la prueba justa: el modelo actual nunca las vio, y el nuevo predice a cada una sin haberla visto.
+4. **Publicación con aprobación.** El flujo `.github/workflows/train-model.yml` corre cada lunes (o a mano), muestra las cifras en su resumen y, si el control pasa, deja el paso «publish» esperando la aprobación de una persona. Al aprobar, `release.py publish` inserta la versión en `model_versions`.
+5. **La app la descarga.** Con cuenta, la app pide `GET /v1/models/classifier` al abrir una sesión; si no hay versión, no hay red o el archivo no valida, usa el modelo con el que viene.
+
+| Archivo | Qué hace |
+|---|---|
+| `store.py fetch <archivo>` | Descarga la caché de latidos de WESAD y las grabaciones enviadas, con la clave de servicio. |
+| `store.py upload-cache` | Sube `cache/*.npz` a la tabla privada `training_assets` (una sola vez). |
+| `release.py summary / passes / publish <modelo>` | Resume el entrenamiento, dice si puede publicarse y publica. Se niega a publicar un modelo que el control no aprobó. |
+
+**Preparación, una sola vez** (son pasos tuyos: tocan servicios remotos):
+
+1. Aplicar `supabase/migrations/20261012000000_training_recordings.sql` en el *SQL Editor* de Supabase.
+2. Subir la caché de WESAD, con `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` en la terminal: `.venv/Scripts/python store.py upload-cache`. WESAD es de uso científico y no comercial: la caché va a una tabla privada, no al repositorio.
+3. En GitHub, en el repositorio del back: *Settings → Secrets and variables → Actions*, crear `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`.
+4. *Settings → Environments*: crear `model-release` y ponerte como *Required reviewer*. Ese es el clic que publica.
+
+La clave de servicio queda así en un segundo lugar (GitHub, además de Vercel). El flujo solo corre programado o a mano, nunca en un pull request, para que no quede al alcance de código ajeno.
+
+Al publicar una versión nueva se actualizan sus cifras en `front/docs/modelo.md`. Probar el flujo sin datos reales: `python train.py candidato.json --collected <exportado>` y `python release.py summary candidato.json`.
 
 ## Archivos
 
@@ -94,5 +119,7 @@ Pruebas del lector (usan numpy, por eso corren con este entorno y no con el de l
 | `train.py` | Paso 4: validación dejando una persona fuera, calibración de la confianza y exportación. |
 | `collected.py` | Lee las grabaciones guiadas exportadas por la app y arma sus ejemplos. No entrena. |
 | `test_collected.py` | Pruebas del lector. |
+| `store.py`, `release.py` | Lo que el reentrenamiento trae de la base de datos y cuándo se puede publicar un modelo. |
+| `test_release.py` | Sus pruebas. |
 
 Los valores de `features.py` copian los del frontend (cada uno indica su archivo de origen). Si cambian allí, se cambian aquí y se entrena de nuevo.
