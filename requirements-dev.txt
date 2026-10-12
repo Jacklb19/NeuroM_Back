@@ -10,11 +10,8 @@ pluggy==1.6.0
 Pygments==2.21.0
 pytest==9.1.1
 
-# HTTP client that FastAPI's TestClient is built on (Starlette 1.7 recommends httpx2).
-h11==0.16.0
-httpcore2==2.13.1
-httpx2==2.13.1
-truststore==0.10.4
+# FastAPI's TestClient is built on httpx2, which requirements.txt already pins
+# because the API uses it to call Supabase.
 
 # ASGI server for running the API locally (Vercel provides its own in production).
 click==8.5.0
