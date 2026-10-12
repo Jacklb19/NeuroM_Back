@@ -1,0 +1,3 @@
+# Kept out of the deployment: only the API runs on Vercel.
+training/
+tests/
