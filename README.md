@@ -25,13 +25,17 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 | `GET /sessions/{id}` | Una sesión con sus indicadores. | 200 | 404 `not_found` |
 | `DELETE /sessions/{id}` | Borra una sesión y sus indicadores. | 204 | 404 `not_found` |
 | `DELETE /account` | Borra la cuenta de quien llama y, en cascada, todo lo suyo. | 204 | |
+| `POST /recordings` | Guarda una grabación guiada que la persona acepta enviar para entrenar el modelo. | 201 si la crea; 200 si ya existía | 403 `consent_required` |
+| `GET /recordings` | Lista las grabaciones enviadas, sin los latidos. | 200 | |
+| `DELETE /recordings/{id}` | Retira una grabación enviada. | 204 | 404 `not_found` |
+| `GET /models/classifier` | La última versión publicada del clasificador, con su archivo. Basta una cuenta. | 200 | 404 `not_found` si no hay ninguna publicada |
 | `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 502 `language_model_unavailable` |
 | `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 502 `language_model_unavailable` |
 
 Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no verifica), 403 `second_factor_required`, 422 `invalid_request` y 502 `storage_unavailable` (Supabase no respondió o respondió algo inesperado).
 
 - **Identidad (ADR-19):** el token se verifica con las claves públicas del proyecto de Supabase (firma ES256, emisor, audiencia y caducidad). Las claves se descargan una vez y se reutilizan. Cualquier fallo responde lo mismo, sin decir por qué.
-- **Segundo factor (ADR-10):** las cuatro rutas de sesiones exigen que el token diga `aal2`. Borrar la cuenta lo exige solo si la cuenta tiene un segundo factor verificado, para que una contraseña robada no baste.
+- **Segundo factor (ADR-10):** las cuatro rutas de sesiones y las tres de grabaciones exigen que el token diga `aal2`. Borrar la cuenta lo exige solo si la cuenta tiene un segundo factor verificado, para que una contraseña robada no baste.
 - **Doble barrera:** la API llama a Supabase con el token de la persona, así que las políticas RLS vuelven a comprobar la propiedad y el segundo factor. Por eso la sesión de otra persona responde igual que una que no existe. La clave de servicio se usa únicamente para borrar la cuenta.
 - **Envío idempotente (ADR-18):** el id de la sesión lo genera el dispositivo. Enviar dos veces la misma sesión no la duplica; la segunda vez solo actualiza la valoración final, que es lo único que la persona completa después.
 - **Consentimiento:** el frontend lo guarda en `profiles.sync_consent_at` y la base de datos rechaza guardar sesiones sin él.
