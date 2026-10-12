@@ -36,6 +36,12 @@ Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no v
 - **Envío idempotente (ADR-18):** el id de la sesión lo genera el dispositivo. Enviar dos veces la misma sesión no la duplica; la segunda vez solo actualiza la valoración final, que es lo único que la persona completa después.
 - **Consentimiento:** el frontend lo guarda en `profiles.sync_consent_at` y la base de datos rechaza guardar sesiones sin él.
 
+### Grabaciones para entrenar y versiones del clasificador (ADR-32, ADR-33)
+
+- **Grabaciones:** son latidos, así que las tres rutas exigen segundo factor (`aal2`) y se guardan con el token de la persona. El cuerpo es `{"id", "participant", "recorded_at", "source_kind", "segments", "consent"}`: solo fuentes que miden a una persona (`ble` o `camera`), los tres tramos del protocolo en orden (`rest`, `slow_breathing`, `demanding_task`), cada uno con `planned_seconds`, `beat_times_ms` y `rr_ms`, y `consent: true`. Sin consentimiento responde 403 y no guarda nada. No lleva nombre ni correo: `participant` es un código al azar del dispositivo. La persona puede retirarlas cuando quiera y caen al borrar la cuenta.
+- **Clasificador:** `GET /models/classifier` devuelve `{"version", "sha256", "published_at", "model"}`. Solo sirve el archivo si coincide con la suma de comprobación registrada al publicarlo; si no, responde 502. La app valida el contenido de nuevo y, sin cuenta o sin versión publicada, usa el modelo con el que viene.
+- **Nada se entrena ni se publica desde la API.** El entrenamiento corre fuera (`training/`, flujo `train-model.yml`) y una versión solo existe cuando una persona la aprueba. Ver `training/README.md`.
+
 ### Modelo de lenguaje (ADR-05, ADR-08)
 
 Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py`. Nunca participa en el lazo de control: solo propone un plan y redacta un resumen.
@@ -158,6 +164,8 @@ El esquema vive como migraciones SQL en `supabase/migrations/`, una por cambio:
 
 - `20260928000000_initial_schema.sql`: `profiles`, `plans`, `sessions`, `session_metrics` y `model_versions`, con sus políticas de propiedad.
 - `20261011000000_cloud_sessions.sql`: consentimiento en `profiles`, los campos de una sesión del dispositivo, el segundo factor (`aal2`) como política restrictiva en `sessions` y `session_metrics`, y las funciones `save_session`, `list_sessions`, `get_session` y `delete_session`, que la API llama con el token de la persona.
+
+- `20261012000000_training_recordings.sql`: `training_recordings` (grabaciones guiadas, con segundo factor y borrables por su dueño), `training_assets` (archivos del entrenamiento, solo para la clave de servicio), el archivo de cada versión en `model_versions` y las funciones `save_training_recording`, `list_training_recordings`, `delete_training_recording` y `current_classifier`. Su prueba es `supabase/tests/training_recordings_test.sql`, que se ejecuta igual que la anterior.
 
 Todas las tablas tienen seguridad a nivel de fila (RLS), y una prueba lo comprueba. Las migraciones nunca se aplican a la base remota desde aquí: se copian en el *SQL Editor* del panel de Supabase, en orden.
 

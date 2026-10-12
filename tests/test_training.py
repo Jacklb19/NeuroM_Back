@@ -202,4 +202,7 @@ def test_the_checksum_does_not_depend_on_how_the_file_is_laid_out() -> None:
     reordered = dict(reversed(list(MODEL.items())))
 
     assert model_checksum(reordered) == model_checksum(MODEL)
+    # The training job publishes with this same value for this same model (training/test_release.py).
+    fixed = MODEL | {"weights": [[0.1, -0.2]], "note": "señal"}
+    assert model_checksum(fixed) == "626c413ad8278cf5a770fe81494472e97600bdfaaa77cd785291e3620ec0807a"
     assert model_checksum(MODEL | {"temperature": 1.6}) != model_checksum(MODEL)
