@@ -1,5 +1,6 @@
 # Runtime dependencies, pinned with their transitive packages (resolved for Python 3.13).
-# Vercel installs this file when it builds the function.
+# Local environments and CI install this file. Vercel reads the same pins from
+# `dependencies` in pyproject.toml; a test keeps the two lists identical.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1

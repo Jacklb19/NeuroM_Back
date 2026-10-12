@@ -107,13 +107,13 @@ Comprobación: `http://127.0.0.1:8000/v1/health` responde `{"status":"ok","versi
 
 Cubren la identidad (sin token, token mal firmado, caducado, de otro proyecto o sin segundo factor), las sesiones (guardar, repetir el envío, listar, leer, borrar, sesión ajena, datos inválidos y fallos de la base), el borrado de cuenta, el estado del servicio, CORS (origen permitido y no permitido, verificación previa), la carga de la configuración (variables ausentes o inválidas nombradas sin revelar valores, secretos ocultos, coincidencia con `.env.example`), el formato de los errores (también el 500 inesperado con CORS y su documentación en el OpenAPI), el punto de entrada y la coherencia de los archivos del proyecto. La integración continua (`.github/workflows/ci.yml`) instala `requirements-dev.txt` con el Python de `.python-version` y ejecuta la misma batería.
 
-Dependencias: `requirements.txt` contiene solo las de ejecución, fijadas con todas sus transitivas (es lo que instala Vercel); `requirements-dev.txt` las incluye y añade pytest y uvicorn (servidor local).
+Dependencias: `requirements.txt` contiene solo las de ejecución, fijadas con todas sus transitivas, y la lista `dependencies` de `pyproject.toml` repite exactamente las mismas, porque Vercel instala las de `pyproject.toml` e ignora `requirements.txt` cuando existen los dos (una prueba falla si difieren); `requirements-dev.txt` las incluye y añade pytest y uvicorn (servidor local).
 
 ## Despliegue en Vercel
 
 El despliegue lo dispara el push a GitHub mediante la integración Git de Vercel; ningún agente despliega ni cambia variables remotas.
 
-- **Proyecto:** uno propio para este repositorio (ADR-19), con *Root Directory* en la raíz del repositorio. Vercel detecta FastAPI en `app/main.py`, instala `requirements.txt` y usa Python 3.13 por `.python-version`.
+- **Proyecto:** uno propio para este repositorio (ADR-19), con *Root Directory* en la raíz del repositorio. Vercel detecta FastAPI en `app/main.py`, instala las dependencias de `pyproject.toml` y usa Python 3.13 por `.python-version`.
 - **Variables:** definir las variables de la tabla anterior en *Settings → Environment Variables* del proyecto. `ALLOWED_ORIGINS` lleva el dominio de producción del frontend.
 - **Frontend:** su variable `VITE_API_BASE_URL` apunta a la URL de este proyecto, y esa misma URL va en `connect-src` de su CSP.
 - **`maxDuration`: 10 s.** El estado del servicio y las operaciones de datos responden en menos de un segundo, más el arranque en frío de Python; 10 s deja margen de sobra y corta pronto una llamada colgada a Supabase en lugar de consumir hasta el máximo del plan (300 s según la Tabla 16). Se revisará al implementar el plan y el resumen con el modelo de lenguaje, si su latencia con reintentos lo exige.
