@@ -32,6 +32,7 @@ class ErrorCode(StrEnum):
     CONSENT_REQUIRED = "consent_required"
     SESSION_CONFLICT = "session_conflict"
     STORAGE_UNAVAILABLE = "storage_unavailable"
+    LANGUAGE_MODEL_UNAVAILABLE = "language_model_unavailable"
     REQUEST_FAILED = "request_failed"
     INTERNAL_ERROR = "internal_error"
 

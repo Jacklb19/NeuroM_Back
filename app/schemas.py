@@ -31,6 +31,13 @@ class Goal(StrEnum):
     PAUSE = "pause"
 
 
+class Locale(StrEnum):
+    """Languages of the interface (ADR-31); generated text is written in the one the person reads."""
+
+    ES = "es"
+    EN = "en"
+
+
 class SourceKind(StrEnum):
     """Where the pulse came from. Mirrors the frontend's source catalog."""
 
