@@ -25,6 +25,26 @@ SESSIONS_PATH: Final = "/sessions"
 ACCOUNT_PATH: Final = "/account"
 """The signed-in person's account (ADR-18: ``DELETE /v1/account``)."""
 
+RECORDINGS_PATH: Final = "/recordings"
+"""Guided recordings a person sends for training (ADR-33), relative to ``API_PREFIX``."""
+
+CLASSIFIER_PATH: Final = "/models/classifier"
+"""The latest published version of the classifier (Table 15)."""
+
+RECORDING_STAGES: Final = ("rest", "slow_breathing", "demanding_task")
+"""Stages of a guided recording, in order. Mirrors the frontend's ``COLLECTION_STAGE_IDS``
+(src/features/collection/collectionProtocol.ts) and ``training/collected.py``."""
+
+MAX_STAGE_SECONDS: Final = 3600
+"""Longest stage accepted in a recording; the protocol's longest lasts five minutes."""
+
+MAX_STAGE_BEATS: Final = 12_000
+"""Most heartbeats accepted in one stage: an hour at 200 beats per minute."""
+
+MAX_RR_MS: Final = 10_000.0
+"""Longest interval between two beats accepted, in milliseconds. Artefacts are kept on
+purpose (training filters them like the app does), but not absurd values."""
+
 PLAN_SUGGESTION_PATH: Final = "/plans/suggest"
 """Plan proposed by the language model (Table 15, RF-13), relative to ``API_PREFIX``."""
 
