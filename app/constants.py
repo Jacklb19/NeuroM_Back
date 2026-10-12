@@ -98,13 +98,15 @@ PLAN_DURATIONS_MINUTES: Final = (10, 15, 20, 30, 45, 60)
 LAST_HOUR_OF_DAY: Final = 23
 """Hours of the day run from 0 to this one."""
 
-SAMPLE_PERIOD_SECONDS: Final = 5
-"""Seconds of signal each sample of a session stands for (the frontend's ``COMPUTE_PERIOD_S``)."""
+MIN_PULSE_BPM: Final = 20
+MAX_PULSE_BPM: Final = 250
+"""Bounds of a mean pulse accepted in the figures of a summary: wider than any real session."""
 
-SUMMARY_EDGE_SAMPLES: Final = 3
-"""Samples averaged at each end of a session to say how an indicator started and ended.
-Mirrors the frontend's ``EDGE_SAMPLES`` (src/features/records/summarizeSession.ts), so the
-text talks about the same figures the summary screen shows."""
+MAX_VARIATION_MS: Final = 1000
+"""Largest variation between beats (RMSSD, in ms) accepted in the figures of a summary."""
+
+MAX_SUMMARY_MINUTES: Final = MAX_LISTENED_SECONDS // 60
+"""Most minutes a figure of a summary may state: those of the longest session accepted."""
 
 LANGUAGE_MODEL_BASE_URL: Final = "https://api.groq.com/openai/v1"
 """Groq's OpenAI-compatible API (ADR-08)."""

@@ -14,36 +14,25 @@ quota. Automated tests never do this: they simulate the model.
 import asyncio
 import sys
 
-from app.assistance import PlanRequest, suggest_plan, summarize_session
+from app.assistance import PlanRequest, SessionFigures, suggest_plan, summarize_session
 from app.config import get_settings
 from app.errors import ApiError
 from app.language_model import LanguageModelGateway
-from app.schemas import Goal, Locale, Session
+from app.schemas import Goal, Locale
 
-_EXAMPLE_SESSION = {
-    "id": "017f22e2-79b0-7000-8000-000000000001",
-    "started_at": "2026-10-07T22:00:00Z",
-    "ended_at": "2026-10-07T22:20:00Z",
+_EXAMPLE_FIGURES = {
     "planned_minutes": 20,
+    "listened_minutes": 19,
     "goals": ["rest_before_sleep"],
-    "listened_seconds": 1190,
-    "source_kind": "ble",
+    "pulse_start": 78,
+    "pulse_end": 69,
+    "variation_start": 22,
+    "variation_end": 30,
+    "minutes_by_state": {"high": 0, "uncertain": 9, "low": 7},
     "rating_before": 4,
     "rating_after": 7,
-    "samples": [
-        {
-            "second": 185 + 60 * i,
-            "mean_hr": 78 - 0.6 * i,
-            "rmssd": 22 + 0.5 * i,
-            "sdnn": 35,
-            "lf_hf_ratio": None,
-            "estimated_state": "low" if i > 9 else "uncertain",
-            "good_quality": True,
-        }
-        for i in range(16)
-    ],
 }
-"""A made-up session: nobody's data."""
+"""Made-up figures: nobody's data."""
 
 
 async def main(locale: Locale) -> None:
@@ -51,7 +40,7 @@ async def main(locale: Locale) -> None:
     try:
         plan = await suggest_plan(PlanRequest(goals=[Goal.REST_BEFORE_SLEEP], local_hour=22, locale=locale), model)
         print("plan:", plan.model_dump())
-        narrative = await summarize_session(Session.model_validate(_EXAMPLE_SESSION), locale, model)
+        narrative = await summarize_session(SessionFigures.model_validate(_EXAMPLE_FIGURES), locale, model)
         print("summary:", narrative.model_dump())
     except ApiError as error:
         # The reason is in the log line printed above this one (status of the service, or why the answer was refused).

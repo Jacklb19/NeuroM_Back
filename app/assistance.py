@@ -3,26 +3,34 @@
 Two closed questions: which length fits a plan (RF-13) and how to tell a
 finished session in plain words (RF-15). The model receives only catalog
 values and aggregated figures, laid out in a fixed template, never free
-text from the person and never the samples of a session. Its answer is
-checked against a closed schema: the length must be one of the allowed
-ones, and any text with clinical wording is refused.
+text from the person and never the samples of a session. The figures of a
+summary come from the browser, which already shows them on the summary
+screen; here each one is checked against a closed range, so nothing but
+numbers and catalog values can reach the model. Its answer is checked
+against a closed schema: the length must be one of the allowed ones, and any
+text with clinical wording is refused.
 """
 
 import re
-from typing import Any, Final, Literal, Self
+from typing import Annotated, Any, Final, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from app.constants import (
     LAST_HOUR_OF_DAY,
+    MAX_PLANNED_MINUTES,
+    MAX_PULSE_BPM,
+    MAX_RATING,
+    MAX_SUMMARY_MINUTES,
+    MAX_VARIATION_MS,
+    MIN_PULSE_BPM,
+    MIN_RATING,
     PLAN_DURATIONS_MINUTES,
     PLAN_NOTE_MAX_CHARS,
-    SAMPLE_PERIOD_SECONDS,
-    SUMMARY_EDGE_SAMPLES,
     SUMMARY_MAX_CHARS,
 )
 from app.language_model import InvalidModelOutput, LanguageModelGateway
-from app.schemas import ActivationState, Goal, Locale, Sample, Session
+from app.schemas import ActivationState, Goal, Locale
 
 _LANGUAGE_NAMES: Final = {Locale.ES: "Spanish", Locale.EN: "English"}
 """How each interface language is named to the model."""
@@ -150,13 +158,69 @@ class PlanSuggestion(BaseModel):
     model: str
 
 
+Minutes = Annotated[int, Field(ge=0, le=MAX_SUMMARY_MINUTES)]
+Pulse = Annotated[int, Field(ge=MIN_PULSE_BPM, le=MAX_PULSE_BPM)]
+Variation = Annotated[int, Field(ge=0, le=MAX_VARIATION_MS)]
+SelfRating = Annotated[int, Field(ge=MIN_RATING, le=MAX_RATING)]
+
+
+class SessionFigures(BaseModel):
+    """The aggregated figures of one session: whole numbers within closed ranges and catalog values.
+
+    They are what the summary screen already shows. No sample, no date, no
+    identifier and no text the person typed fits in here (RNF-07, ADR-08).
+    A figure that could not be computed is null.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    planned_minutes: int = Field(ge=1, le=MAX_PLANNED_MINUTES)
+    listened_minutes: Minutes
+    goals: list[Goal] = Field(max_length=len(Goal))
+    pulse_start: Pulse | None
+    pulse_end: Pulse | None
+    variation_start: Variation | None
+    variation_end: Variation | None
+    minutes_by_state: dict[ActivationState, Minutes] | None
+    """Minutes estimated in each state; null when the session had no estimate at all."""
+    rating_before: SelfRating | None
+    rating_after: SelfRating | None
+
+    @field_validator("goals", mode="before")
+    @classmethod
+    def _goals_from_their_ids(cls, value: object) -> object:
+        """Strict mode would refuse the goal ids as plain strings, which is how JSON carries them."""
+        return [Goal(goal) if isinstance(goal, str) and goal in Goal else goal for goal in value] if isinstance(value, list) else value
+
+    @field_validator("minutes_by_state", mode="before")
+    @classmethod
+    def _states_from_their_ids(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        return {ActivationState(state) if isinstance(state, str) and state in ActivationState else state: minutes for state, minutes in value.items()}
+
+    @model_validator(mode="after")
+    def _is_consistent(self) -> Self:
+        if len(set(self.goals)) != len(self.goals):
+            raise ValueError("goals cannot repeat")
+        # A change needs both of its ends; one alone was never shown to the person.
+        if (self.pulse_start is None) != (self.pulse_end is None):
+            raise ValueError("the pulse needs both ends or none")
+        if (self.variation_start is None) != (self.variation_end is None):
+            raise ValueError("the variation needs both ends or none")
+        if self.minutes_by_state is not None and set(self.minutes_by_state) != set(ActivationState):
+            raise ValueError("every state needs its minutes")
+        return self
+
+
 class SummaryRequest(BaseModel):
-    """Agreement to send the aggregated figures of the session to the language model."""
+    """The figures of a session and the agreement to send them to the language model."""
 
     model_config = ConfigDict(extra="forbid")
 
     consent: bool
     locale: Locale = Locale.ES
+    figures: SessionFigures
 
 
 class SessionNarrative(BaseModel):
@@ -193,52 +257,30 @@ async def suggest_plan(request: PlanRequest, model: LanguageModelGateway) -> Pla
     return PlanSuggestion(duration_minutes=answer.duration_minutes, note=answer.note, model=model.model)
 
 
-def _mean(values: list[float]) -> float:
-    return sum(values) / len(values)
+def _figure(value: int | None) -> str:
+    return _UNKNOWN if value is None else str(value)
 
 
-def _change(samples: list[Sample], indicator: Literal["mean_hr", "rmssd"]) -> tuple[str, str]:
-    """An indicator at the start and at the end of the session, as whole figures.
-
-    Each end averages up to ``SUMMARY_EDGE_SAMPLES`` good-quality samples, as the
-    summary screen does; without at least one per end both are unknown.
-    """
-    values = [value for s in samples if s.good_quality and (value := getattr(s, indicator)) is not None]
-    edge = min(SUMMARY_EDGE_SAMPLES, len(values) // 2)
-    if edge == 0:
-        return _UNKNOWN, _UNKNOWN
-    return str(round(_mean(values[:edge]))), str(round(_mean(values[-edge:])))
-
-
-def session_figures(session: Session) -> str:
-    """The aggregated figures of a session, as the only data the model receives.
-
-    Catalog values and rounded numbers in fixed lines: no sample, no date, no
-    identifier and nothing the person typed (RNF-07, ADR-08).
-    """
-    pulse_start, pulse_end = _change(session.samples, "mean_hr")
-    variation_start, variation_end = _change(session.samples, "rmssd")
-    estimated = [s.estimated_state for s in session.samples if s.estimated_state is not None]
+def figure_lines(figures: SessionFigures) -> str:
+    """The figures of a session laid out in fixed lines: the only data the model receives."""
     lines = [
-        f"planned_minutes: {session.planned_minutes}",
-        f"listened_minutes: {int(session.listened_seconds // 60)}",
-        f"goals: {'; '.join(_GOAL_MEANINGS[goal] for goal in session.goals) or 'none chosen'}",
-        f"pulse_at_the_start_beats_per_minute: {pulse_start}",
-        f"pulse_at_the_end_beats_per_minute: {pulse_end}",
-        f"variation_between_beats_at_the_start_ms: {variation_start}",
-        f"variation_between_beats_at_the_end_ms: {variation_end}",
+        f"planned_minutes: {figures.planned_minutes}",
+        f"listened_minutes: {figures.listened_minutes}",
+        f"goals: {'; '.join(_GOAL_MEANINGS[goal] for goal in figures.goals) or 'none chosen'}",
+        f"pulse_at_the_start_beats_per_minute: {_figure(figures.pulse_start)}",
+        f"pulse_at_the_end_beats_per_minute: {_figure(figures.pulse_end)}",
+        f"variation_between_beats_at_the_start_ms: {_figure(figures.variation_start)}",
+        f"variation_between_beats_at_the_end_ms: {_figure(figures.variation_end)}",
     ]
     for state, name in _STATE_NAMES.items():
-        minutes = estimated.count(state) * SAMPLE_PERIOD_SECONDS // 60
-        lines.append(f"minutes_estimated_{name}: {minutes if estimated else _UNKNOWN}")
-    rating_before = _UNKNOWN if session.rating_before is None else str(session.rating_before)
-    rating_after = _UNKNOWN if session.rating_after is None else str(session.rating_after)
-    lines.append(f"how_they_felt_before_0_to_10: {rating_before}")
-    lines.append(f"how_they_felt_after_0_to_10: {rating_after}")
+        minutes = None if figures.minutes_by_state is None else figures.minutes_by_state[state]
+        lines.append(f"minutes_estimated_{name}: {_figure(minutes)}")
+    lines.append(f"how_they_felt_before_0_to_10: {_figure(figures.rating_before)}")
+    lines.append(f"how_they_felt_after_0_to_10: {_figure(figures.rating_after)}")
     return "<session_figures>\n" + "\n".join(lines) + "\n</session_figures>"
 
 
-async def summarize_session(session: Session, locale: Locale, model: LanguageModelGateway) -> SessionNarrative:
+async def summarize_session(figures: SessionFigures, locale: Locale, model: LanguageModelGateway) -> SessionNarrative:
     """Ask the model to tell a session in plain words, from its aggregated figures (RF-15)."""
     system = _SUMMARY_SYSTEM.format(
         summary_chars=SUMMARY_MAX_CHARS,
@@ -246,5 +288,5 @@ async def summarize_session(session: Session, locale: Locale, model: LanguageMod
         forbidden=_FORBIDDEN_FOR_THE_MODEL,
         unknown=_UNKNOWN,
     )
-    answer = await model.ask(system, session_figures(session), lambda raw: _validated(_SummaryAnswer, raw))
+    answer = await model.ask(system, figure_lines(figures), lambda raw: _validated(_SummaryAnswer, raw))
     return SessionNarrative(text=answer.text, model=model.model)

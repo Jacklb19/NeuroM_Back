@@ -10,7 +10,6 @@ from typing import Annotated, Final
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import TypeAdapter, ValidationError
 
 from app.assistance import (
     PlanRequest,
@@ -23,14 +22,13 @@ from app.assistance import (
 from app.constants import PLAN_SUGGESTION_PATH, SESSION_SUMMARY_SUFFIX, SESSIONS_PATH
 from app.errors import ApiError, ErrorCode
 from app.language_model import LanguageModelGateway
-from app.schemas import Session
-from app.security import Identity, current_identity, gateway_of, health_data_identity
-from app.supabase import SupabaseGateway
+from app.security import Identity, current_identity
 
 router = APIRouter(tags=["language model"])
 
 _SUMMARY_PATH: Final = f"{SESSIONS_PATH}/{{session_id}}{SESSION_SUMMARY_SUFFIX}"
-_SESSION: Final = TypeAdapter(Session)
+
+Account = Annotated[Identity, Depends(current_identity)]
 
 
 def language_model_of(request: Request) -> LanguageModelGateway:
@@ -43,9 +41,7 @@ LanguageModel = Annotated[LanguageModelGateway, Depends(language_model_of)]
 
 
 @router.post(PLAN_SUGGESTION_PATH, summary="Propose a session plan from the chosen goals")
-async def propose_plan(
-    plan: PlanRequest, _identity: Annotated[Identity, Depends(current_identity)], model: LanguageModel
-) -> PlanSuggestion:
+async def propose_plan(plan: PlanRequest, _identity: Account, model: LanguageModel) -> PlanSuggestion:
     """A session length, among the allowed ones, for the goals the person chose.
 
     Needs an account, so the language model cannot be used anonymously, but
@@ -55,28 +51,21 @@ async def propose_plan(
     return await suggest_plan(plan, model)
 
 
-@router.post(_SUMMARY_PATH, summary="Tell a stored session in plain words")
+@router.post(_SUMMARY_PATH, summary="Tell a session in plain words")
 async def summarize(
-    session_id: UUID,
-    request: SummaryRequest,
-    identity: Annotated[Identity, Depends(health_data_identity)],
-    gateway: Annotated[SupabaseGateway, Depends(gateway_of)],
-    model: LanguageModel,
+    session_id: UUID, request: SummaryRequest, _identity: Account, model: LanguageModel
 ) -> SessionNarrative:
-    """A few sentences that describe one of the person's stored sessions.
+    """A few sentences that describe one session, from the figures the app already shows.
 
-    The session is read with the person's own token, so only its owner, past
-    the second factor, can ask (ADR-10). The language model receives
-    aggregated figures only, and only when the request says the person
-    agreed to that (``consent``); nothing is sent otherwise.
+    The browser sends the aggregated figures, each checked here against a
+    closed range, so the session does not have to be stored in the cloud and
+    nothing but numbers and catalog values reaches the language model. The
+    figures are sent only when the request says the person agreed
+    (``consent``). Nothing is read or stored: the answer contains no data the
+    caller did not send, which is why an account is enough and the second
+    factor is not asked for. ``session_id`` only names the session.
     """
+    del session_id  # Part of the route of Table 15; the API has no use for it.
     if not request.consent:
         raise ApiError(HTTPStatus.FORBIDDEN, ErrorCode.CONSENT_REQUIRED)
-    found = await gateway.call_function("get_session", {"p_id": str(session_id)}, identity.token)
-    if found is None:
-        raise ApiError(HTTPStatus.NOT_FOUND, ErrorCode.NOT_FOUND)
-    try:
-        session = _SESSION.validate_python(found)
-    except ValidationError:
-        raise ApiError(HTTPStatus.BAD_GATEWAY, ErrorCode.STORAGE_UNAVAILABLE) from None
-    return await summarize_session(session, request.locale, model)
+    return await summarize_session(request.figures, request.locale, model)
