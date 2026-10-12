@@ -1,0 +1,12 @@
+# Training-only dependencies of the activation classifier (ADR-32), pinned
+# with their transitive packages. They never reach production: the API does
+# not import this folder and the browser runs the trained model from a JSON file.
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
+
+# Pulled in by scikit-learn.
+cloudpickle==3.1.2
+joblib==1.6.0
+narwhals==2.27.1
+threadpoolctl==3.7.0

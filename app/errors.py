@@ -27,6 +27,11 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "not_found"
     METHOD_NOT_ALLOWED = "method_not_allowed"
     INVALID_REQUEST = "invalid_request"
+    UNAUTHENTICATED = "unauthenticated"
+    SECOND_FACTOR_REQUIRED = "second_factor_required"
+    CONSENT_REQUIRED = "consent_required"
+    SESSION_CONFLICT = "session_conflict"
+    STORAGE_UNAVAILABLE = "storage_unavailable"
     REQUEST_FAILED = "request_failed"
     INTERNAL_ERROR = "internal_error"
 

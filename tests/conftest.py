@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings, get_settings
 from app.factory import create_app
 from tests.fakes import FAKE_VALUES
+from tests.supabase_fake import KEY_ID, FakeSupabase, SigningKey
 
 
 @pytest.fixture
@@ -16,9 +17,20 @@ def settings() -> Settings:
     return Settings.model_validate(FAKE_VALUES)
 
 
+@pytest.fixture(scope="session")
+def signing_key() -> SigningKey:
+    """Generated once: creating a key pair is the slow part of signing a token."""
+    return SigningKey(KEY_ID)
+
+
 @pytest.fixture
-def app(settings: Settings) -> FastAPI:
-    return create_app(settings)
+def supabase(signing_key: SigningKey) -> FakeSupabase:
+    return FakeSupabase(signing_key)
+
+
+@pytest.fixture
+def app(settings: Settings, supabase: FakeSupabase) -> FastAPI:
+    return create_app(settings, supabase.transport)
 
 
 @pytest.fixture
