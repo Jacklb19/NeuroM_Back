@@ -19,6 +19,7 @@ LOOKALIKE_PREVIEW_ORIGINS: Final = (
 
 FAKE_VALUES: Final[Mapping[str, str]] = {
     "supabase_url": "https://project.supabase.example.test",
+    "supabase_anon_key": "fake-anon-key-for-tests",
     "supabase_service_role_key": "fake-service-role-key-for-tests",
     "groq_api_key": "fake-groq-api-key-for-tests",
     "allowed_origins": ALLOWED_ORIGINS_SEPARATOR.join((ALLOWED_ORIGIN, LOCAL_ORIGIN)),

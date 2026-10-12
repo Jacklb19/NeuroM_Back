@@ -4,6 +4,7 @@ Kept apart from ``app.main`` so tests can build an app from explicit
 ``Settings`` without the module-level instance reading the real environment.
 """
 
+import httpx2
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,10 +19,17 @@ from app.constants import (
 )
 from app.errors import UnexpectedErrorMiddleware, exception_handlers, openapi_error_responses
 from app.routes import API_ROUTERS
+from app.security import TokenVerifier, issuer_of
+from app.supabase import SupabaseGateway
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, supabase_transport: httpx2.AsyncBaseTransport | None = None
+) -> FastAPI:
     """Create the API configured by ``settings`` (the environment when omitted).
+
+    ``supabase_transport`` replaces the network when calling Supabase; tests
+    pass one that answers in memory.
 
     Raises ``SettingsError`` when the environment is incomplete, so a broken
     deployment fails at boot instead of on its first request.
@@ -40,6 +48,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Endpoints that need configuration depend on get_settings; pinning it here
     # makes them see the same settings the CORS middleware was built with.
     app.dependency_overrides[get_settings] = pinned_settings
+    # One gateway and one verifier per application: connections and signing keys
+    # are reused across requests while the function stays warm.
+    app.state.supabase = SupabaseGateway(resolved, supabase_transport)
+    app.state.token_verifier = TokenVerifier(app.state.supabase, issuer_of(str(resolved.supabase_url)))
     # The middleware added last is the outermost. The catch-all goes first so
     # CORSMiddleware wraps it and an unexpected 500 still reaches the browser.
     app.add_middleware(UnexpectedErrorMiddleware)
