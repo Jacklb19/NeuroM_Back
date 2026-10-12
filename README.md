@@ -26,7 +26,7 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 | `DELETE /sessions/{id}` | Borra una sesión y sus indicadores. | 204 | 404 `not_found` |
 | `DELETE /account` | Borra la cuenta de quien llama y, en cascada, todo lo suyo. | 204 | |
 | `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 502 `language_model_unavailable` |
-| `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión guardada. No guarda nada. | 200 | 403 `consent_required`, 404 `not_found`, 502 `language_model_unavailable` |
+| `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 502 `language_model_unavailable` |
 
 Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no verifica), 403 `second_factor_required`, 422 `invalid_request` y 502 `storage_unavailable` (Supabase no respondió o respondió algo inesperado).
 
@@ -42,12 +42,12 @@ Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py
 
 | | `POST /plans/suggest` | `POST /sessions/{id}/summary` |
 |---|---|---|
-| Quién | Cualquier cuenta (objetivos y hora no son datos de salud) | Cuenta con segundo factor (`aal2`) |
-| Cuerpo | `{"goals": [...], "local_hour": 0–23 o null, "locale": "es" o "en"}`. Al menos un objetivo, sin repetir | `{"consent": true, "locale": "es" o "en"}` |
+| Quién | Cualquier cuenta (objetivos y hora no son datos de salud) | Cualquier cuenta: la respuesta no contiene nada que quien llama no haya enviado |
+| Cuerpo | `{"goals": [...], "local_hour": 0–23 o null, "locale": "es" o "en"}`. Al menos un objetivo, sin repetir | `{"consent": true, "locale": "es" o "en", "figures": {...}}` |
 | Respuesta | `{"duration_minutes": 10, 15, 20, 30, 45 o 60, "note": "...", "generated": true, "model": "..."}` | `{"text": "...", "generated": true, "model": "..."}` |
 
-- **Solo valores cerrados hacia el modelo.** No se acepta texto libre de la persona: los objetivos son los del catálogo y un campo desconocido responde 422. El resumen se arma en el servidor a partir de la sesión guardada, leída con el token de la persona (RLS decide si es suya), y al modelo solo llegan cifras agregadas: minutos, pulso y variación al empezar y al terminar, minutos en cada estado y las dos valoraciones. Nunca las muestras, las fechas ni el identificador.
-- **Consentimiento.** El resumen exige `"consent": true`; con `false` responde 403 `consent_required` sin leer la sesión ni llamar al modelo.
+- **Solo valores cerrados hacia el modelo.** No se acepta texto libre de la persona: los objetivos son los del catálogo y un campo desconocido responde 422. Las cifras del resumen las envía el navegador, que ya las muestra en la pantalla de resumen, así que la sesión no tiene que estar guardada en la nube. `figures` es un esquema cerrado: `planned_minutes`, `listened_minutes`, `goals` (del catálogo), `pulse_start` y `pulse_end` (20 a 250), `variation_start` y `variation_end` (0 a 1000 ms), `minutes_by_state` (`high`, `uncertain` y `low`, o `null`), `rating_before` y `rating_after` (0 a 10). Solo números enteros dentro de rango y valores de catálogo; un campo desconocido, un texto o un número fuera de rango responden 422 sin llamar al modelo. No caben muestras, fechas ni identificadores, y el `id` de la ruta no se usa ni se envía.
+- **Consentimiento.** El resumen exige `"consent": true`; con `false` responde 403 `consent_required` sin llamar al modelo.
 - **Salida validada contra un esquema cerrado.** Solo los campos pedidos; la duración debe ser una de las permitidas; el texto tiene un largo máximo y se rechaza entero si usa lenguaje clínico (diagnóstico, tratamiento, dolor, enfermedad…). Cualquier salida fuera del esquema responde 502 `language_model_unavailable`.
 - **`generated` siempre es `true`:** el frontend debe mostrar el texto como generado automáticamente.
 - **Reintento y caché.** Si el modelo responde 429 o 503 con una espera de hasta 3 s (`retry-after`), se espera y se reintenta una vez. La misma pregunta se responde desde una caché en memoria durante una hora, mientras la función siga viva. Límite de 1024 tokens generados.
@@ -62,7 +62,7 @@ La cuenta de Groq debe tener activada la retención cero en *Data Controls* (ADR
 .venv/Scripts/python -m tools.try_language_model es
 ```
 
-Pide un plan y el resumen de una sesión inventada con el mismo código de las rutas, e imprime la respuesta o el código de error. Gasta unos pocos tokens de la cuota.
+Pide un plan y el resumen de unas cifras inventadas con el mismo código de las rutas, e imprime la respuesta o el código de error. Gasta unos pocos tokens de la cuota.
 
 ## Stack
 
@@ -148,7 +148,7 @@ El despliegue lo dispara el push a GitHub mediante la integración Git de Vercel
 - **Proyecto:** uno propio para este repositorio (ADR-19), con *Root Directory* en la raíz del repositorio. Vercel detecta FastAPI en `app/main.py`, instala las dependencias de `pyproject.toml` y usa Python 3.13 por `.python-version`.
 - **Variables:** definir las variables de la tabla anterior en *Settings → Environment Variables* del proyecto. `ALLOWED_ORIGINS` lleva el dominio de producción del frontend.
 - **Frontend:** su variable `VITE_API_BASE_URL` apunta a la URL de este proyecto, y esa misma URL va en `connect-src` de su CSP.
-- **`maxDuration`: 30 s.** Las operaciones de datos responden en menos de un segundo. El resumen es la ruta más lenta: una lectura de la base (hasta 6 s), dos intentos del modelo de lenguaje (hasta 8 s cada uno) y la espera entre ellos (hasta 3 s) suman 25 s en el peor caso; una prueba comprueba que caben. El plan Hobby admite hasta 300 s (documentación de Vercel, consultada el 12 oct 2026).
+- **`maxDuration`: 30 s.** Las operaciones de datos responden en menos de un segundo. Las rutas del modelo de lenguaje son las más lentas: la descarga de las claves de firma en un arranque en frío (hasta 6 s), dos intentos del modelo (hasta 8 s cada uno) y la espera entre ellos (hasta 3 s) suman 25 s en el peor caso; una prueba comprueba que caben. El plan Hobby admite hasta 300 s (documentación de Vercel, consultada el 12 oct 2026).
 - **`excludeFiles`:** las pruebas, el entorno virtual, las migraciones, el entrenamiento y las comprobaciones manuales no entran en el paquete de la función.
 - **Comprobación tras desplegar:** `GET https://<backend>.vercel.app/v1/health` responde 200 y `GET https://<backend>.vercel.app/v1/sessions` sin token responde 401 con `{"code":"unauthenticated"}`.
 
