@@ -47,6 +47,18 @@ def test_vercel_function_points_to_the_entrypoint_with_explicit_limits() -> None
     assert function["excludeFiles"] == "{" + ",".join(EXCLUDED_DIRS) + "}/**"
 
 
+def runtime_requirements() -> list[str]:
+    """Requirement lines of requirements.txt, without comments or blank lines."""
+    lines = (ROOT / REQUIREMENT_FILES[0]).read_text(encoding="utf-8").splitlines()
+    return [line.split("#", 1)[0].strip() for line in lines if line.split("#", 1)[0].strip()]
+
+
+def test_pyproject_declares_exactly_the_runtime_requirements() -> None:
+    """Vercel installs the dependencies of pyproject.toml and ignores requirements.txt:
+    a package missing there deploys an API that cannot even be imported."""
+    assert project_table()["dependencies"] == runtime_requirements()
+
+
 def test_every_requirement_is_pinned() -> None:
     for file_name in REQUIREMENT_FILES:
         for raw_line in (ROOT / file_name).read_text(encoding="utf-8").splitlines():
