@@ -51,6 +51,14 @@ PLAN_SUGGESTION_PATH: Final = "/plans/suggest"
 SESSION_SUMMARY_SUFFIX: Final = "/summary"
 """Summary of one session written by the language model (Table 15, RF-15); follows the session path."""
 
+PROGRESS_SUMMARY_PATH: Final = "/progress/summary"
+"""Optional explanation of browser-computed comparisons (ADR-48), without reading or storing history."""
+PROGRESS_MIN_GROUP_COUNT: Final = 5
+PROGRESS_MAX_GROUP_COUNT: Final = 100_000
+PROGRESS_MAX_OBSERVATIONS: Final = 3
+PROGRESS_MAX_PULSE_CHANGE: Final = 300
+PROGRESS_MEDIAN_STEP: Final = 0.1
+
 BEARER_SCHEME: Final = "Bearer"
 """Scheme of the ``Authorization`` header that carries the Supabase token (ADR-19)."""
 
