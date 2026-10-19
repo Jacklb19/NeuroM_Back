@@ -31,6 +31,7 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 | `GET /models/classifier` | La última versión publicada del clasificador, con su archivo. Basta una cuenta. | 200 | 404 `not_found` si no hay ninguna publicada |
 | `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 502 `language_model_unavailable` |
 | `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 502 `language_model_unavailable` |
+| `POST /progress/summary` | Elige una explicación verificada de hasta tres comparaciones calculadas en el dispositivo (ADR-48). No lee ni guarda historial. | 200 | 403 `consent_required`, 502 `language_model_unavailable` |
 
 Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no verifica), 403 `second_factor_required`, 422 `invalid_request` y 502 `storage_unavailable` (Supabase no respondió o respondió algo inesperado).
 
@@ -65,6 +66,8 @@ Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py
 - **Nada en los registros:** ni la clave ni el texto del modelo; solo el estado de la respuesta o el motivo del rechazo.
 
 La cuenta de Groq debe tener activada la retención cero en *Data Controls* (ADR-08).
+
+**Explicación del progreso (ADR-48):** pide cuenta y consentimiento por petición, siguiendo la regla del resumen agregado. Solo admite catálogos, conteos de 5 a 100000 y medianas acotadas de hasta tres comparaciones. No admite notas, fechas, ids de sesiones ni señal. El modelo devuelve únicamente una presentación (`overview` o `balance`) y las referencias exactas recibidas, en su orden original; cualquier prosa, cifra adicional o referencia inventada se rechaza. La interfaz utiliza frases revisadas y sus cifras originales. Contrato completo en `../front/docs/contrato-progress-summary.md`. No requiere migración ni secretos nuevos.
 
 **Probarlo con la clave real** (las pruebas automáticas nunca llaman al servicio). Con las variables de `.env` cargadas en la terminal, como en «Ejecutar en local»:
 
