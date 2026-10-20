@@ -142,6 +142,9 @@ def test_unreachable_database_answers_storage_unavailable(
         {"samples": [sample(5, estimated_state="alarming")]},
         {"samples": [sample(second) for second in range(MAX_SESSION_SAMPLES + 1)]},
         {"owner_id": "7d3e2a10-58b2-4c8a-b6f4-2a9c1e0d3f77"},
+        {"signal_mode": "telepathy"},
+        {"signal_mode": "hr_only", "source_kind": "ble"},
+        {"signal_mode": "hr_only", "samples": [sample(5, rmssd=None, sdnn=None)]},
     ],
 )
 def test_invalid_session_is_rejected_before_reaching_the_database(
@@ -220,3 +223,24 @@ def test_malformed_session_id_never_reaches_the_database(
 
     assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT
     assert not supabase.calls
+
+
+def test_stores_and_reads_a_pulse_only_session_and_defaults_older_ones_to_intervals(
+    client: TestClient, supabase: FakeSupabase, headers: dict[str, str]
+) -> None:
+    supabase.results["save_session"] = True
+    pulse_only = session_body(
+        source_kind="ble",
+        signal_mode="hr_only",
+        samples=[sample(5, rmssd=None, sdnn=None), sample(10, rmssd=None, sdnn=None)],
+    )
+
+    response = client.post(SESSIONS_URL, json=pulse_only, headers=headers)
+
+    assert response.status_code == HTTPStatus.CREATED
+    assert supabase.calls[0].arguments["p_session"]["signal_mode"] == "hr_only"
+
+    supabase.results["get_session"] = session_body()
+    response = client.get(SESSION_URL, headers=headers)
+
+    assert response.json()["signal_mode"] == "hrv", "a session stored before ADR-51 had intervals"
