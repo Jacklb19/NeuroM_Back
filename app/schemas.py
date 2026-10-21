@@ -51,6 +51,13 @@ class SourceKind(StrEnum):
     CAMERA = "camera"
 
 
+class SignalMode(StrEnum):
+    """What the pulse source sent (ADR-51): beat intervals, or only the pulse, as many watches do."""
+
+    HRV = "hrv"
+    HEART_RATE_ONLY = "hr_only"
+
+
 class ActivationState(StrEnum):
     """States the app estimates (ADR-12). Descriptive, never a clinical measure."""
 
@@ -89,6 +96,8 @@ class SessionSummary(_Strict):
     goals: list[Goal] = Field(max_length=len(Goal))
     listened_seconds: float = Field(ge=0, le=MAX_LISTENED_SECONDS, allow_inf_nan=False)
     source_kind: SourceKind | None
+    # Older sessions, and databases before the migration of ADR-51, carry no mode: they had intervals.
+    signal_mode: SignalMode = SignalMode.HRV
     rating_before: Rating | None
     rating_after: Rating | None
 
@@ -106,6 +115,16 @@ class Session(SessionSummary):
             raise ValueError("goals cannot repeat")
         if len({sample.second for sample in self.samples}) != len(self.samples):
             raise ValueError("two samples cannot share a second")
+        if self.signal_mode is SignalMode.HEART_RATE_ONLY:
+            # Only a Bluetooth watch sends the pulse alone, and without intervals there is no variability.
+            if self.source_kind is not SourceKind.BLE:
+                raise ValueError("only a Bluetooth source can send the pulse alone")
+            if any(
+                value is not None
+                for sample in self.samples
+                for value in (sample.rmssd, sample.sdnn, sample.lf_hf_ratio)
+            ):
+                raise ValueError("a pulse-only session has no variability")
         return self
 
     @property
