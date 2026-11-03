@@ -15,11 +15,13 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 from app.constants import (
     MAX_LISTENED_SECONDS,
     MAX_PLANNED_MINUTES,
+    MAX_PULSE_BPM,
     MAX_RATING,
     MAX_RR_MS,
     MAX_SESSION_SAMPLES,
     MAX_STAGE_BEATS,
     MAX_STAGE_SECONDS,
+    MAX_VARIATION_MS,
     MIN_RATING,
     RECORDING_STAGES,
 )
@@ -68,6 +70,7 @@ class ActivationState(StrEnum):
 
 Rating = Annotated[int, Field(ge=MIN_RATING, le=MAX_RATING)]
 Indicator = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+Variation = Annotated[float, Field(ge=0, le=MAX_VARIATION_MS, allow_inf_nan=False)]
 
 
 class _Strict(BaseModel):
@@ -77,10 +80,11 @@ class _Strict(BaseModel):
 class Sample(_Strict):
     """Aggregated indicators of one moment of a session; null where there was no reliable signal."""
 
-    second: int = Field(ge=0)
-    mean_hr: Annotated[float, Field(gt=0, allow_inf_nan=False)] | None
-    rmssd: Indicator | None
-    sdnn: Indicator | None
+    second: int = Field(ge=0, le=MAX_LISTENED_SECONDS)
+    mean_hr: Annotated[float, Field(gt=0, le=MAX_PULSE_BPM, allow_inf_nan=False)] | None
+    rmssd: Variation | None
+    sdnn: Variation | None
+    # The ratio has no natural ceiling: the high-frequency power may be tiny.
     lf_hf_ratio: Indicator | None
     estimated_state: ActivationState | None
     good_quality: bool

@@ -7,7 +7,16 @@ import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
-from app.constants import API_PREFIX, MAX_RATING, MAX_SESSION_SAMPLES, SESSION_LIST_LIMIT, SESSIONS_PATH
+from app.constants import (
+    API_PREFIX,
+    MAX_LISTENED_SECONDS,
+    MAX_PULSE_BPM,
+    MAX_RATING,
+    MAX_SESSION_SAMPLES,
+    MAX_VARIATION_MS,
+    SESSION_LIST_LIMIT,
+    SESSIONS_PATH,
+)
 from app.errors import ErrorCode
 from tests.fakes import FAKE_VALUES
 from tests.supabase_fake import FakeSupabase, SigningKey, bearer, database_error, make_token
@@ -139,6 +148,10 @@ def test_unreachable_database_answers_storage_unavailable(
         {"listened_seconds": -1},
         {"samples": [sample(5), sample(5)]},
         {"samples": [sample(5, mean_hr=-3)]},
+        # The database refuses these too (SEC-P5): the API must answer first, and with its own error.
+        {"samples": [sample(5, mean_hr=MAX_PULSE_BPM + 1)]},
+        {"samples": [sample(5, rmssd=MAX_VARIATION_MS + 1)]},
+        {"samples": [sample(MAX_LISTENED_SECONDS + 1)]},
         {"samples": [sample(5, estimated_state="alarming")]},
         {"samples": [sample(second) for second in range(MAX_SESSION_SAMPLES + 1)]},
         {"owner_id": "7d3e2a10-58b2-4c8a-b6f4-2a9c1e0d3f77"},
