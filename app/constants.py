@@ -168,6 +168,16 @@ LANGUAGE_MODEL_CACHE_SECONDS: Final = 3600
 LANGUAGE_MODEL_CACHE_ENTRIES: Final = 256
 """Most answers kept; the oldest is dropped first."""
 
+LANGUAGE_MODEL_DAILY_CALLS: Final = 30
+"""Calls to the language model each account may make per day (UTC), shared by the plan,
+the session summary and the progress explanation (ADR-54)."""
+
+LANGUAGE_MODEL_QUOTA_FUNCTION: Final = "consume_language_model_quota"
+"""Database function that counts one call of the caller if today's limit allows it."""
+
+PRODUCTION_ENVIRONMENT: Final = "production"
+"""Value of ``VERCEL_ENV`` in the production deployment, where the API documentation is not served."""
+
 PLAN_NOTE_MAX_CHARS: Final = 200
 """Longest note accepted with a proposed plan: one sentence."""
 

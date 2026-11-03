@@ -57,6 +57,8 @@ class Settings(BaseModel):
     allowed_origins: tuple[str, ...] = Field(min_length=1)
     vercel_preview_project: str | None = Field(default=None, pattern=f"^{VERCEL_PREVIEW_SLUG_PATTERN}$")
     vercel_preview_team: str | None = Field(default=None, pattern=f"^{VERCEL_PREVIEW_SLUG_PATTERN}$")
+    vercel_env: str | None = None
+    """Set by Vercel on every deployment (``production``, ``preview`` or ``development``)."""
 
     @model_validator(mode="after")
     def _preview_needs_project_and_team(self) -> "Settings":

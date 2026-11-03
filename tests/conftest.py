@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
+from app.constants import LANGUAGE_MODEL_QUOTA_FUNCTION
 from app.factory import create_app
 from tests.fakes import FAKE_VALUES
 from tests.language_model_fake import FakeLanguageModel
@@ -26,7 +27,10 @@ def signing_key() -> SigningKey:
 
 @pytest.fixture
 def supabase(signing_key: SigningKey) -> FakeSupabase:
-    return FakeSupabase(signing_key)
+    fake = FakeSupabase(signing_key)
+    # The daily quota of the language model has room unless a test says otherwise (ADR-54).
+    fake.results[LANGUAGE_MODEL_QUOTA_FUNCTION] = True
+    return fake
 
 
 @pytest.fixture
