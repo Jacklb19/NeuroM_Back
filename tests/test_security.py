@@ -77,6 +77,8 @@ def forged_tokens(key: SigningKey) -> dict[str, str]:
         "issued by another project": make_token(key, issuer="https://other.supabase.example.test/auth/v1"),
         "naming an unknown key": make_token(key, key_id="unknown-key"),
         "without a user id": make_token(key, user_id="not-a-uuid"),
+        # Supabase gives anonymous sign-ins the same audience as real accounts.
+        "of an anonymous sign-in": make_token(key, anonymous=True),
         "unsigned": jwt.encode({"sub": USER_ID, "aud": JWT_AUDIENCE, "iss": ISSUER}, "", algorithm="none", headers={"kid": KEY_ID}),
         # The classic confusion attack: the public key replayed as a shared secret.
         "signed with the public key as a secret": jwt.encode(
@@ -97,6 +99,7 @@ def forged_tokens(key: SigningKey) -> dict[str, str]:
         "issued by another project",
         "naming an unknown key",
         "without a user id",
+        "of an anonymous sign-in",
         "unsigned",
         "signed with the public key as a secret",
     ],
@@ -108,6 +111,18 @@ def test_token_that_does_not_verify_is_rejected(
 
     assert_error(response, HTTPStatus.UNAUTHORIZED, ErrorCode.UNAUTHENTICATED)
     assert not supabase.calls
+
+
+def test_anonymous_sign_in_cannot_reach_what_the_first_factor_opens(
+    client: TestClient, supabase: FakeSupabase, signing_key: SigningKey
+) -> None:
+    token = make_token(signing_key, assurance=FIRST_FACTOR_ONLY, anonymous=True)
+
+    response = client.delete(ACCOUNT_URL, headers=bearer(token))
+
+    assert_error(response, HTTPStatus.UNAUTHORIZED, ErrorCode.UNAUTHENTICATED)
+    assert not supabase.admin_requests
+    assert not supabase.deleted_accounts
 
 
 @pytest.mark.parametrize(("method", "url"), HEALTH_DATA_ENDPOINTS)
