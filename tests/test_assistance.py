@@ -11,7 +11,10 @@ from app.assistance import SessionFigures, figure_lines
 from app.constants import (
     API_PREFIX,
     LANGUAGE_MODEL,
+    LANGUAGE_MODEL_DAILY_CALLS,
     LANGUAGE_MODEL_MAX_OUTPUT_TOKENS,
+    LANGUAGE_MODEL_QUOTA_FUNCTION,
+    PROGRESS_SUMMARY_PATH,
     PLAN_DURATIONS_MINUTES,
     PLAN_NOTE_MAX_CHARS,
     PLAN_SUGGESTION_PATH,
@@ -22,6 +25,7 @@ from app.errors import ErrorCode
 from tests.fakes import FAKE_VALUES
 from tests.language_model_fake import FakeLanguageModel, busy, chat_answer
 from tests.supabase_fake import FIRST_FACTOR_ONLY, FakeSupabase, SigningKey, bearer, make_token
+from tests.test_progress_assistance import body as progress_body
 from tests.test_sessions import SESSION_ID
 
 PLAN_URL: Final = f"{API_PREFIX}{PLAN_SUGGESTION_PATH}"
@@ -213,6 +217,60 @@ def test_the_same_question_is_answered_from_the_cache(
     assert len(language_model.requests) == 2
 
 
+# --- Daily quota (ADR-54) ---
+
+
+def test_each_call_spends_the_account_quota_as_that_account(
+    client: TestClient, supabase: FakeSupabase, language_model: FakeLanguageModel, headers: dict[str, str]
+) -> None:
+    language_model.answers = [chat_answer(PLAN_ANSWER)]
+
+    response = client.post(PLAN_URL, json=PLAN_REQUEST, headers=headers)
+
+    assert response.status_code == HTTPStatus.OK
+    (call,) = supabase.calls
+    assert call.name == LANGUAGE_MODEL_QUOTA_FUNCTION
+    assert call.arguments == {"p_daily_limit": LANGUAGE_MODEL_DAILY_CALLS}
+    # Counted as the person, with their own token, never with the service key.
+    assert call.headers["Authorization"] == headers["Authorization"]
+
+
+@pytest.mark.parametrize(
+    ("url", "body"),
+    [
+        (PLAN_URL, PLAN_REQUEST),
+        (SUMMARY_URL, summary_request()),
+        (f"{API_PREFIX}{PROGRESS_SUMMARY_PATH}", None),
+    ],
+)
+def test_once_the_quota_is_used_up_the_model_is_not_asked(
+    client: TestClient,
+    supabase: FakeSupabase,
+    language_model: FakeLanguageModel,
+    headers: dict[str, str],
+    url: str,
+    body: dict[str, Any] | None,
+) -> None:
+    supabase.results[LANGUAGE_MODEL_QUOTA_FUNCTION] = False
+
+    response = client.post(url, json=body if body is not None else progress_body(), headers=headers)
+
+    assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+    assert response.json() == {"code": ErrorCode.RATE_LIMITED}
+    assert language_model.requests == []
+
+
+def test_a_refused_request_spends_no_quota(
+    client: TestClient, supabase: FakeSupabase, headers: dict[str, str]
+) -> None:
+    without_consent = client.post(SUMMARY_URL, json=summary_request(consent=False), headers=headers)
+    invalid = client.post(PLAN_URL, json={"goals": []}, headers=headers)
+
+    assert without_consent.status_code == HTTPStatus.FORBIDDEN
+    assert invalid.status_code == HTTPStatus.UNPROCESSABLE_CONTENT
+    assert supabase.calls == []
+
+
 # --- Summary (RF-15) ---
 
 
@@ -225,8 +283,9 @@ def test_tells_a_session_from_the_figures_the_app_shows_and_nothing_else(
 
     assert response.status_code == HTTPStatus.OK
     assert response.json() == SUMMARY_ANSWER | {"generated": True, "model": LANGUAGE_MODEL}
-    # Nothing is read from the database: the session does not need to be in the cloud.
-    assert supabase.calls == []
+    # Nothing is read from the database, only the daily quota is counted (ADR-54):
+    # the session does not need to be in the cloud.
+    assert [call.name for call in supabase.calls] == [LANGUAGE_MODEL_QUOTA_FUNCTION]
     system, user = (message["content"] for message in language_model.bodies[0]["messages"])
     assert "English" in system
     assert user.startswith("<session_figures>") and user.endswith("</session_figures>")
