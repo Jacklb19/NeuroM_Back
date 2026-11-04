@@ -55,6 +55,7 @@ def make_token(
     issuer: str = ISSUER,
     expires_in: int = TOKEN_LIFETIME_SECONDS,
     key_id: str | None = None,
+    anonymous: bool = False,
 ) -> str:
     """A token as Supabase Auth would issue it; each argument breaks one thing for the negative tests."""
     now = int(time.time())
@@ -66,6 +67,7 @@ def make_token(
         "exp": now + expires_in,
         "aal": assurance,
         "role": "authenticated",
+        "is_anonymous": anonymous,
     }
     return jwt.encode(claims, key.private, algorithm=JWT_ALGORITHMS[0], headers={"kid": key_id or key.key_id})
 

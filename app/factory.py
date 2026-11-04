@@ -16,8 +16,10 @@ from app.constants import (
     CORS_ALLOWED_HEADERS,
     CORS_ALLOWED_METHODS,
     CORS_PREFLIGHT_MAX_AGE_SECONDS,
+    PRODUCTION_ENVIRONMENT,
 )
 from app.errors import UnexpectedErrorMiddleware, exception_handlers, openapi_error_responses
+from app.headers import SecurityHeadersMiddleware
 from app.language_model import LanguageModelGateway
 from app.routes import API_ROUTERS
 from app.security import TokenVerifier, issuer_of
@@ -39,9 +41,14 @@ def create_app(
     deployment fails at boot instead of on its first request.
     """
     resolved = settings if settings is not None else get_settings()
+    # Production does not publish its documentation (ADR-54): it only helps someone probing the API.
+    documented = resolved.vercel_env != PRODUCTION_ENVIRONMENT
     app = FastAPI(
         title=API_TITLE,
         version=API_VERSION,
+        docs_url="/docs" if documented else None,
+        redoc_url="/redoc" if documented else None,
+        openapi_url="/openapi.json" if documented else None,
         exception_handlers=exception_handlers(),
         responses=openapi_error_responses(),
     )
@@ -71,6 +78,8 @@ def create_app(
         allow_headers=CORS_ALLOWED_HEADERS,
         max_age=CORS_PREFLIGHT_MAX_AGE_SECONDS,
     )
+    # Outermost, so every answer carries them: errors, refusals and CORS preflights alike.
+    app.add_middleware(SecurityHeadersMiddleware)
     for router in API_ROUTERS:
         app.include_router(router, prefix=API_PREFIX)
     return app

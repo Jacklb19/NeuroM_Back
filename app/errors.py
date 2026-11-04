@@ -33,6 +33,7 @@ class ErrorCode(StrEnum):
     SESSION_CONFLICT = "session_conflict"
     STORAGE_UNAVAILABLE = "storage_unavailable"
     LANGUAGE_MODEL_UNAVAILABLE = "language_model_unavailable"
+    RATE_LIMITED = "rate_limited"
     REQUEST_FAILED = "request_failed"
     INTERNAL_ERROR = "internal_error"
 

@@ -113,7 +113,7 @@ MAX_PLANNED_MINUTES: Final = 240
 """Longest plan accepted, in minutes; the app offers up to 60."""
 
 MAX_LISTENED_SECONDS: Final = 24 * 60 * 60
-"""Longest listening time accepted for one session: a day."""
+"""Longest listening time accepted for one session: a day. No sample may be later either."""
 
 MIN_RATING: Final = 0
 MAX_RATING: Final = 10
@@ -128,10 +128,12 @@ LAST_HOUR_OF_DAY: Final = 23
 
 MIN_PULSE_BPM: Final = 20
 MAX_PULSE_BPM: Final = 250
-"""Bounds of a mean pulse accepted in the figures of a summary: wider than any real session."""
+"""Bounds of a mean pulse accepted in the figures of a summary: wider than any real session.
+The upper one also bounds the pulse of every sample (the app keeps beats of 30 to 200 bpm)."""
 
 MAX_VARIATION_MS: Final = 1000
-"""Largest variation between beats (RMSSD, in ms) accepted in the figures of a summary."""
+"""Largest variation between beats (RMSSD, in ms) accepted in the figures of a summary,
+and the largest RMSSD or SDNN of a sample."""
 
 MAX_SUMMARY_MINUTES: Final = MAX_LISTENED_SECONDS // 60
 """Most minutes a figure of a summary may state: those of the longest session accepted."""
@@ -167,6 +169,16 @@ LANGUAGE_MODEL_CACHE_SECONDS: Final = 3600
 
 LANGUAGE_MODEL_CACHE_ENTRIES: Final = 256
 """Most answers kept; the oldest is dropped first."""
+
+LANGUAGE_MODEL_DAILY_CALLS: Final = 30
+"""Calls to the language model each account may make per day (UTC), shared by the plan,
+the session summary and the progress explanation (ADR-54)."""
+
+LANGUAGE_MODEL_QUOTA_FUNCTION: Final = "consume_language_model_quota"
+"""Database function that counts one call of the caller if today's limit allows it."""
+
+PRODUCTION_ENVIRONMENT: Final = "production"
+"""Value of ``VERCEL_ENV`` in the production deployment, where the API documentation is not served."""
 
 PLAN_NOTE_MAX_CHARS: Final = 200
 """Longest note accepted with a proposed plan: one sentence."""

@@ -31,6 +31,7 @@ from app.supabase import SupabaseGateway
 
 _REQUIRED_CLAIMS: Final = ("exp", "sub", "aud", "iss")
 _ASSURANCE_CLAIM: Final = "aal"
+_ANONYMOUS_CLAIM: Final = "is_anonymous"
 _KEY_ID_HEADER: Final = "kid"
 
 
@@ -89,6 +90,10 @@ class TokenVerifier:
             user_id = UUID(str(claims["sub"]))
         except (jwt.PyJWTError, ValueError):
             raise _unauthenticated() from None
+        # Anonymous sign-ins share the audience of real accounts, so only this claim tells
+        # them apart. Anything but an explicit false is refused: nobody is behind such a token.
+        if claims.get(_ANONYMOUS_CLAIM, False) is not False:
+            raise _unauthenticated()
         return Identity(user_id=user_id, assurance=str(claims.get(_ASSURANCE_CLAIM, "")), token=token)
 
     async def _signing_key(self, key_id: object) -> jwt.PyJWK:

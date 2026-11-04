@@ -23,7 +23,9 @@ from app.constants import PLAN_SUGGESTION_PATH, PROGRESS_SUMMARY_PATH, SESSION_S
 from app.progress_assistance import ProgressNarrative, ProgressRequest, explain_progress
 from app.errors import ApiError, ErrorCode
 from app.language_model import LanguageModelGateway
-from app.security import Identity, current_identity
+from app.quota import spend_language_model_call
+from app.security import Identity, current_identity, gateway_of
+from app.supabase import SupabaseGateway
 
 router = APIRouter(tags=["language model"])
 
@@ -39,35 +41,42 @@ def language_model_of(request: Request) -> LanguageModelGateway:
 
 
 LanguageModel = Annotated[LanguageModelGateway, Depends(language_model_of)]
+Gateway = Annotated[SupabaseGateway, Depends(gateway_of)]
 
 
 @router.post(PROGRESS_SUMMARY_PATH, summary="Explain browser-computed history comparisons")
-async def progress_summary(request: ProgressRequest, _identity: Account, model: LanguageModel) -> ProgressNarrative:
+async def progress_summary(
+    request: ProgressRequest, identity: Account, model: LanguageModel, supabase: Gateway
+) -> ProgressNarrative:
     """Choose reviewed wording for at most three consented comparisons (ADR-48).
 
     Requires an account, following the existing aggregated session summary.
     No history is read or stored, and only the caller's supplied figures are
     described. Free-form text and unknown references from the model are refused.
+    Each call spends one of the account's daily calls (ADR-54).
     """
     if not request.consent:
         raise ApiError(HTTPStatus.FORBIDDEN, ErrorCode.CONSENT_REQUIRED)
+    await spend_language_model_call(supabase, identity)
     return await explain_progress(request, model)
 
 
 @router.post(PLAN_SUGGESTION_PATH, summary="Propose a session plan from the chosen goals")
-async def propose_plan(plan: PlanRequest, _identity: Account, model: LanguageModel) -> PlanSuggestion:
+async def propose_plan(plan: PlanRequest, identity: Account, model: LanguageModel, supabase: Gateway) -> PlanSuggestion:
     """A session length, among the allowed ones, for the goals the person chose.
 
     Needs an account, so the language model cannot be used anonymously, but
     not the second factor: goals and an hour of the day are not health data.
-    Nothing is stored. The person can always keep their own plan.
+    Nothing is stored. The person can always keep their own plan. Each call
+    spends one of the account's daily calls (ADR-54).
     """
+    await spend_language_model_call(supabase, identity)
     return await suggest_plan(plan, model)
 
 
 @router.post(_SUMMARY_PATH, summary="Tell a session in plain words")
 async def summarize(
-    session_id: UUID, request: SummaryRequest, _identity: Account, model: LanguageModel
+    session_id: UUID, request: SummaryRequest, identity: Account, model: LanguageModel, supabase: Gateway
 ) -> SessionNarrative:
     """A few sentences that describe one session, from the figures the app already shows.
 
@@ -77,9 +86,11 @@ async def summarize(
     figures are sent only when the request says the person agreed
     (``consent``). Nothing is read or stored: the answer contains no data the
     caller did not send, which is why an account is enough and the second
-    factor is not asked for. ``session_id`` only names the session.
+    factor is not asked for. ``session_id`` only names the session. Each call
+    spends one of the account's daily calls (ADR-54).
     """
     del session_id  # Part of the route of Table 15; the API has no use for it.
     if not request.consent:
         raise ApiError(HTTPStatus.FORBIDDEN, ErrorCode.CONSENT_REQUIRED)
+    await spend_language_model_call(supabase, identity)
     return await summarize_session(request.figures, request.locale, model)
