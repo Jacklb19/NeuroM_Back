@@ -62,6 +62,7 @@ Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py
 - **Salida validada contra un esquema cerrado.** Solo los campos pedidos; la duración debe ser una de las permitidas; el texto tiene un largo máximo y se rechaza entero si usa lenguaje clínico (diagnóstico, tratamiento, dolor, enfermedad…). Cualquier salida fuera del esquema responde 502 `language_model_unavailable`.
 - **`generated` siempre es `true`:** el frontend debe mostrar el texto como generado automáticamente.
 - **Reintento y caché.** Si el modelo responde 429 o 503 con una espera de hasta 3 s (`retry-after`), se espera y se reintenta una vez. La misma pregunta se responde desde una caché en memoria durante una hora, mientras la función siga viva. Límite de 1024 tokens generados.
+- **Cuota diaria (ADR-54).** Cada cuenta tiene 30 llamadas al día (UTC), compartidas por los tres puntos. Se gasta una después de las comprobaciones de la petición y solo si la respuesta no está en la caché, justo antes de llamar al modelo; una respuesta de la caché no gasta cuota. Agotada la cuota responde 429 `rate_limited` sin llamar al modelo. Una llamada que el modelo no llega a responder sí gasta su cuota: devolverla exigiría una migración nueva.
 - **Un solo error:** `language_model_unavailable` cubre todo lo que puede fallar con el modelo (sin red, cuota, clave inválida, salida rechazada). La app sigue entonces con el plan manual y el resumen de indicadores.
 - **Nada en los registros:** ni la clave ni el texto del modelo; solo el estado de la respuesta o el motivo del rechazo.
 
