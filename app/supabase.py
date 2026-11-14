@@ -38,6 +38,8 @@ _DATABASE_ERRORS: Final = {
     "P0001": (HTTPStatus.FORBIDDEN, ErrorCode.CONSENT_REQUIRED),
     # unique_violation: the id already belongs to a session the person cannot see.
     "23505": (HTTPStatus.CONFLICT, ErrorCode.SESSION_CONFLICT),
+    # program_limit_exceeded: the account keeps as many sessions or recordings as it may (ADR-63).
+    "54000": (HTTPStatus.CONFLICT, ErrorCode.LIMIT_REACHED),
     # insufficient_privilege: row level security refused the request, which for
     # the owner of the data can only mean a session without the second factor.
     "42501": (HTTPStatus.FORBIDDEN, ErrorCode.SECOND_FACTOR_REQUIRED),

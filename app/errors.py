@@ -34,6 +34,7 @@ class ErrorCode(StrEnum):
     STORAGE_UNAVAILABLE = "storage_unavailable"
     LANGUAGE_MODEL_UNAVAILABLE = "language_model_unavailable"
     RATE_LIMITED = "rate_limited"
+    LIMIT_REACHED = "limit_reached"
     REQUEST_FAILED = "request_failed"
     INTERNAL_ERROR = "internal_error"
 

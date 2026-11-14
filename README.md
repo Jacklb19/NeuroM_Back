@@ -20,12 +20,12 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 | Método y ruta | Qué hace | Éxito | Errores propios |
 |---|---|---|---|
 | `GET /health` | Estado del servicio y de Supabase: `{"status", "version", "supabase"}`. Público. Mira Supabase con la clave pública, como mucho cada 30 s. | 200 | 503 con `status: "degraded"` si no alcanza Supabase |
-| `POST /sessions` | Guarda una sesión terminada con sus indicadores, en una sola transacción. | 201 si la crea; 200 si ya existía | 403 `consent_required`, 409 `session_conflict` |
+| `POST /sessions` | Guarda una sesión terminada con sus indicadores, en una sola transacción. | 201 si la crea; 200 si ya existía | 403 `consent_required`, 409 `session_conflict`, 409 `limit_reached` (la cuenta ya guarda 2000 sesiones) |
 | `GET /sessions` | Lista las sesiones de la persona, sin indicadores, de la más reciente a la más antigua: como mucho 500, en `sessions`. `truncated` vale `true` si quedaron fuera sesiones más antiguas; el cliente no debe tomar su ausencia como un borrado. | 200 | |
 | `GET /sessions/{id}` | Una sesión con sus indicadores. | 200 | 404 `not_found` |
 | `DELETE /sessions/{id}` | Borra una sesión y sus indicadores. | 204 | 404 `not_found` |
 | `DELETE /account` | Borra la cuenta de quien llama y, en cascada, todo lo suyo. | 204 | |
-| `POST /recordings` | Guarda una grabación guiada que la persona acepta enviar para entrenar el modelo. | 201 si la crea; 200 si ya existía | 403 `consent_required` |
+| `POST /recordings` | Guarda una grabación guiada que la persona acepta enviar para entrenar el modelo. | 201 si la crea; 200 si ya existía | 403 `consent_required`, 409 `limit_reached` (la cuenta ya guarda 20 grabaciones) |
 | `GET /recordings` | Lista las grabaciones enviadas, sin los latidos. | 200 | |
 | `DELETE /recordings/{id}` | Retira una grabación enviada. | 204 | 404 `not_found` |
 | `GET /models/classifier` | La última versión publicada del clasificador, con su archivo. Basta una cuenta. | 200 | 404 `not_found` si no hay ninguna publicada |
@@ -179,6 +179,7 @@ El esquema vive como migraciones SQL en `supabase/migrations/`, una por cambio:
 - `20261020000000_pulse_only_sessions.sql`: `signal_mode` en `sessions` para las sesiones de solo pulso (ADR-51); las sesiones anteriores quedan con intervalos entre latidos. Vuelve a crear `save_session`, `list_sessions` y `get_session` con el campo nuevo, sin cambiar propiedad, consentimiento ni segundo factor.
 - `20261102000000_language_model_quota.sql`: la cuota diaria del modelo de lenguaje (ADR-54). Crea la tabla `language_model_usage`, con RLS y sin políticas, y la función `consume_language_model_quota`, `security definer` y concedida solo a `authenticated`.
 - `20261102010000_database_limits.sql`: la base repite los límites que comprueba la API (tamaños, rangos y cotas por muestra) con restricciones `CHECK ... NOT VALID`, que valen para toda fila nueva sin revisar las existentes.
+- `20261114000000_account_storage_limits.sql`: como mucho 2000 sesiones y 20 grabaciones guiadas por cuenta (ADR-63). Un disparador `before insert` cuenta las filas de la cuenta, con un bloqueo por cuenta, y rechaza la nueva con `54000`, que la API responde como 409 `limit_reached`. Reenviar una sesión guardada sigue funcionando. Su prueba es `supabase/tests/account_limits_test.sql`.
 
 Todas las tablas tienen seguridad a nivel de fila (RLS), y una prueba lo comprueba. Las migraciones nunca se aplican a la base remota desde aquí: se copian en el *SQL Editor* del panel de Supabase, en orden.
 
