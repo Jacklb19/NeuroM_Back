@@ -96,6 +96,7 @@ class FakeSupabase:
     def __init__(self, key: SigningKey) -> None:
         self.keys: list[SigningKey] = [key]
         self.key_downloads = 0
+        self.key_requests: list[httpx2.Request] = []
         self.results: dict[str, Any] = {}
         """What each database function answers: a JSON value, or a whole response for errors."""
         self.calls: list[FunctionCall] = []
@@ -114,6 +115,7 @@ class FakeSupabase:
         path = request.url.path
         if path == SUPABASE_JWKS_PATH:
             self.key_downloads += 1
+            self.key_requests.append(request)
             return httpx2.Response(HTTPStatus.OK, json={"keys": [key.public_jwk() for key in self.keys]})
         if path.startswith(f"{SUPABASE_RPC_PATH}/"):
             name = path.removeprefix(f"{SUPABASE_RPC_PATH}/")
