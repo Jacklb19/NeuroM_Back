@@ -20,9 +20,9 @@ from app.assistance import (
     summarize_session,
 )
 from app.constants import PLAN_SUGGESTION_PATH, PROGRESS_SUMMARY_PATH, SESSION_SUMMARY_SUFFIX, SESSIONS_PATH
-from app.progress_assistance import ProgressNarrative, ProgressRequest, explain_progress
 from app.errors import ApiError, ErrorCode
 from app.language_model import LanguageModelGateway
+from app.progress_assistance import ProgressNarrative, ProgressRequest, explain_progress
 from app.quota import language_model_quota
 from app.security import Identity, current_identity, gateway_of
 from app.supabase import SupabaseGateway

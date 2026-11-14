@@ -2,8 +2,8 @@
 
 import importlib
 import sys
-from http import HTTPStatus
 from collections.abc import Iterator
+from http import HTTPStatus
 from typing import Annotated, Final
 
 import pytest

@@ -18,6 +18,7 @@ recording. Those beats are nobody's: the option exists to test the pipeline.
 import json
 import sys
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Final
 
@@ -95,7 +96,7 @@ def beats_of(recording: dict[str, object], subject: int) -> Beats:
         rr = _number_list(segment.get("rrMs"), f"{label}.rrMs")
         if len(beat_times) != len(rr):
             raise ExportError(f"{label}: beatTimesMs and rrMs differ in length")
-        if any(b < a for a, b in zip(beat_times, beat_times[1:], strict=False)) or any(v <= 0 for v in rr):
+        if any(b < a for a, b in pairwise(beat_times)) or any(v <= 0 for v in rr):
             raise ExportError(f"{label}: beat times must not decrease and intervals must be positive")
         times.extend(offset + t for t in beat_times)
         intervals.extend(rr)

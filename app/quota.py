@@ -12,8 +12,8 @@ from http import HTTPStatus
 
 from app.constants import LANGUAGE_MODEL_DAILY_CALLS, LANGUAGE_MODEL_QUOTA_FUNCTION
 from app.errors import ApiError, ErrorCode
-from app.security import Identity
 from app.language_model import BeforeCall
+from app.security import Identity
 from app.supabase import SupabaseGateway
 
 
