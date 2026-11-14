@@ -13,8 +13,10 @@ from app.constants import (
     MAX_LISTENED_SECONDS,
     MAX_PLANNED_MINUTES,
     MAX_PULSE_BPM,
+    MAX_RECORDINGS_PER_ACCOUNT,
     MAX_RR_MS,
     MAX_SESSION_SAMPLES,
+    MAX_SESSIONS_PER_ACCOUNT,
     MAX_STAGE_BEATS,
     MAX_STAGE_SECONDS,
     MAX_VARIATION_MS,
@@ -25,6 +27,7 @@ from app.schemas import Goal
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "supabase" / "migrations"
 LIMITS_MIGRATION = MIGRATIONS_DIR / "20261102010000_database_limits.sql"
+ACCOUNT_LIMITS_MIGRATION = MIGRATIONS_DIR / "20261114000000_account_storage_limits.sql"
 
 CREATE_TABLE = re.compile(
     r"create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?(\w+)\s*\(", re.IGNORECASE
@@ -84,3 +87,11 @@ def test_database_knows_every_goal_and_stage() -> None:
 
     assert all(f"'{name}'" in sql for name in [*(goal.value for goal in Goal), *RECORDING_STAGES])
     assert f"cardinality(goals) <= {len(Goal)}" in sql
+
+
+@pytest.mark.parametrize("limit", [MAX_SESSIONS_PER_ACCOUNT, MAX_RECORDINGS_PER_ACCOUNT])
+def test_database_enforces_the_account_limits_with_the_code_the_api_translates(limit: int) -> None:
+    """Changing a limit per account needs a migration that changes it in the database too (ADR-63)."""
+    text = ACCOUNT_LIMITS_MIGRATION.read_text(encoding="utf-8")
+    assert re.search(rf">= {limit}\b", text)
+    assert "errcode = '54000'" in text

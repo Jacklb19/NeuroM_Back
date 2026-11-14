@@ -104,6 +104,7 @@ def test_sending_a_stored_session_again_answers_ok_without_creating(
         (database_error("23514", "check violated: 4.2"), HTTPStatus.BAD_GATEWAY, ErrorCode.STORAGE_UNAVAILABLE),
         (httpx2.Response(HTTPStatus.INTERNAL_SERVER_ERROR, text="boom"), HTTPStatus.BAD_GATEWAY, ErrorCode.STORAGE_UNAVAILABLE),
         ("not a boolean", HTTPStatus.BAD_GATEWAY, ErrorCode.STORAGE_UNAVAILABLE),
+        (database_error("54000", "session_limit_reached"), HTTPStatus.CONFLICT, ErrorCode.LIMIT_REACHED),
     ],
 )
 def test_database_refusals_become_error_codes(

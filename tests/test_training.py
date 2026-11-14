@@ -101,6 +101,17 @@ def test_without_consent_nothing_is_stored(client: TestClient, supabase: FakeSup
     assert len(supabase.calls) == 1
 
 
+def test_an_account_at_its_recording_limit_is_told_so(
+    client: TestClient, supabase: FakeSupabase, headers: dict[str, str]
+) -> None:
+    supabase.results["save_training_recording"] = database_error("54000", "recording_limit_reached")
+
+    response = client.post(RECORDINGS_URL, json=recording(), headers=headers)
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json() == {"code": ErrorCode.LIMIT_REACHED}
+
+
 @pytest.mark.parametrize(
     "invalid",
     [
