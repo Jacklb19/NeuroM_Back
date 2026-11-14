@@ -29,7 +29,7 @@ from app.constants import (
     PLAN_NOTE_MAX_CHARS,
     SUMMARY_MAX_CHARS,
 )
-from app.language_model import InvalidModelOutput, LanguageModelGateway
+from app.language_model import BeforeCall, InvalidModelOutput, LanguageModelGateway
 from app.schemas import ActivationState, Goal, Locale
 
 _LANGUAGE_NAMES: Final = {Locale.ES: "Spanish", Locale.EN: "English"}
@@ -254,7 +254,7 @@ def _validated[Answer: _ModelAnswer](schema: type[Answer], answer: dict[str, Any
         raise InvalidModelOutput(reasons) from None
 
 
-async def suggest_plan(request: PlanRequest, model: LanguageModelGateway) -> PlanSuggestion:
+async def suggest_plan(request: PlanRequest, model: LanguageModelGateway, before_call: BeforeCall) -> PlanSuggestion:
     """Ask the model for the length of a session, among the allowed ones (RF-13)."""
     system = _PLAN_SYSTEM.format(
         durations=", ".join(str(minutes) for minutes in PLAN_DURATIONS_MINUTES),
@@ -265,7 +265,7 @@ async def suggest_plan(request: PlanRequest, model: LanguageModelGateway) -> Pla
     goals = "; ".join(f"{goal.value} ({_GOAL_MEANINGS[goal]})" for goal in request.goals)
     hour = _UNKNOWN if request.local_hour is None else str(request.local_hour)
     user = f"<session_request>\ngoals: {goals}\nhour_of_the_day_0_to_23: {hour}\n</session_request>"
-    answer = await model.ask(system, user, lambda raw: _validated(_PlanAnswer, raw))
+    answer = await model.ask(system, user, lambda raw: _validated(_PlanAnswer, raw), before_call)
     return PlanSuggestion(duration_minutes=answer.duration_minutes, note=answer.note, model=model.model)
 
 
@@ -292,7 +292,9 @@ def figure_lines(figures: SessionFigures) -> str:
     return "<session_figures>\n" + "\n".join(lines) + "\n</session_figures>"
 
 
-async def summarize_session(figures: SessionFigures, locale: Locale, model: LanguageModelGateway) -> SessionNarrative:
+async def summarize_session(
+    figures: SessionFigures, locale: Locale, model: LanguageModelGateway, before_call: BeforeCall
+) -> SessionNarrative:
     """Ask the model to tell a session in plain words, from its aggregated figures (RF-15)."""
     system = _SUMMARY_SYSTEM.format(
         summary_chars=SUMMARY_MAX_CHARS,
@@ -301,5 +303,5 @@ async def summarize_session(figures: SessionFigures, locale: Locale, model: Lang
         unknown=_UNKNOWN,
         units=_UNIT_WORDS[locale],
     )
-    answer = await model.ask(system, figure_lines(figures), lambda raw: _validated(_SummaryAnswer, raw))
+    answer = await model.ask(system, figure_lines(figures), lambda raw: _validated(_SummaryAnswer, raw), before_call)
     return SessionNarrative(text=answer.text, model=model.model)
