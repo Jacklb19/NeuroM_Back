@@ -148,12 +148,15 @@ Comprobación: `http://127.0.0.1:8000/v1/health` responde `{"status":"ok","versi
 ## Pruebas
 
 ```bash
-.venv/Scripts/python -m pytest
+.venv/Scripts/python -m pytest --cov   # pruebas con cobertura; falla por debajo del 70 %
+.venv/Scripts/python -m ruff check .   # linter
 ```
 
-Cubren la identidad (sin token, token mal firmado, caducado, de otro proyecto o sin segundo factor), las sesiones (guardar, repetir el envío, listar, leer, borrar, sesión ajena, datos inválidos y fallos de la base), el borrado de cuenta, el plan y el resumen con el modelo de lenguaje simulado (valores fuera del catálogo, salidas fuera del esquema o con lenguaje clínico, reintento, caché, consentimiento, que solo viajen cifras agregadas y que ni la clave ni el texto queden en los registros), el estado del servicio, CORS (origen permitido y no permitido, verificación previa), la carga de la configuración (variables ausentes o inválidas nombradas sin revelar valores, secretos ocultos, coincidencia con `.env.example`), el formato de los errores (también el 500 inesperado con CORS y su documentación en el OpenAPI), el punto de entrada y la coherencia de los archivos del proyecto. La integración continua (`.github/workflows/ci.yml`) instala `requirements-dev.txt` con el Python de `.python-version` y ejecuta la misma batería.
+La cobertura (`pytest-cov`, umbral del 70 % de la especificación) y las reglas de `ruff` se configuran en `pyproject.toml`.
 
-Dependencias: `requirements.txt` contiene solo las de ejecución, fijadas con todas sus transitivas, y la lista `dependencies` de `pyproject.toml` repite exactamente las mismas, porque Vercel instala las de `pyproject.toml` e ignora `requirements.txt` cuando existen los dos (una prueba falla si difieren); `requirements-dev.txt` las incluye y añade pytest y uvicorn (servidor local).
+Cubren la identidad (sin token, token mal firmado, caducado, de otro proyecto o sin segundo factor), las sesiones (guardar, repetir el envío, listar, leer, borrar, sesión ajena, datos inválidos y fallos de la base), el borrado de cuenta, el plan y el resumen con el modelo de lenguaje simulado (valores fuera del catálogo, salidas fuera del esquema o con lenguaje clínico, reintento, caché, consentimiento, que solo viajen cifras agregadas y que ni la clave ni el texto queden en los registros), el estado del servicio, CORS (origen permitido y no permitido, verificación previa), la carga de la configuración (variables ausentes o inválidas nombradas sin revelar valores, secretos ocultos, coincidencia con `.env.example`), el formato de los errores (también el 500 inesperado con CORS y su documentación en el OpenAPI), el punto de entrada y la coherencia de los archivos del proyecto. La integración continua (`.github/workflows/ci.yml`) tiene tres trabajos. El primero instala `requirements-dev.txt` con el Python de `.python-version`, pasa `ruff` y ejecuta la batería con cobertura. El segundo instala `training/requirements.txt` y ejecuta las pruebas de `training/`. El tercero levanta la base local con la CLI de Supabase, aplica las migraciones en orden y ejecuta `supabase/tests/*.sql`, igual que en «Probar las migraciones en local».
+
+Dependencias: `requirements.txt` contiene solo las de ejecución, fijadas con todas sus transitivas, y la lista `dependencies` de `pyproject.toml` repite exactamente las mismas, porque Vercel instala las de `pyproject.toml` e ignora `requirements.txt` cuando existen los dos (una prueba falla si difieren); `requirements-dev.txt` las incluye y añade pytest, pytest-cov, ruff y uvicorn (servidor local).
 
 ## Despliegue en Vercel
 

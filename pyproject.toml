@@ -33,3 +33,35 @@ dependencies = [
 testpaths = ["tests"]
 # Lets tests import the app package however pytest is launched.
 pythonpath = ["."]
+
+# Coverage of the API (specification: at least 70 %). CI runs `pytest --cov`;
+# below the threshold the run fails.
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_covered = true
+
+# Linter of the API, the tests, the tools and the training job. The rules are
+# written here so every machine checks the same, whatever its own settings.
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+extend-exclude = ["training/cache"]
+
+[tool.ruff.lint]
+# Errors and undefined names (E, F), sorted imports (I), likely bugs (B),
+# modern syntax (UP), security (S) and Ruff's own checks (RUF).
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "S", "RUF"]
+
+[tool.ruff.lint.isort]
+# The training scripts import one another by module name, as local code.
+known-first-party = ["app", "tests", "tools", "collected", "extract", "features", "release", "store", "train", "wesad", "test_collected"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, and their fake secrets are not secrets.
+"tests/**" = ["S101", "S105", "S106"]
+"training/test_*.py" = ["S101", "S105", "S106"]

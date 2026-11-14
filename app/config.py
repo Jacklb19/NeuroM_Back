@@ -7,12 +7,11 @@ only ever name variables, because their values may be secrets.
 """
 
 import os
+import re
 from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from typing import Final
 from urllib.parse import urlsplit
-
-import re
 
 from pydantic import (
     BaseModel,
