@@ -54,6 +54,10 @@ def unavailable() -> ApiError:
     return ApiError(HTTPStatus.BAD_GATEWAY, ErrorCode.LANGUAGE_MODEL_UNAVAILABLE)
 
 
+type BeforeCall = Callable[[], Awaitable[None]]
+"""Runs only when the model is really going to be asked: the quota is spent there (ADR-54)."""
+
+
 class LanguageModelGateway:
     """HTTP access to the language model, with one bounded retry and a small cache.
 
@@ -81,17 +85,22 @@ class LanguageModelGateway:
         """Name of the model, returned with every generated text."""
         return LANGUAGE_MODEL
 
-    async def ask[Answer](self, system: str, user: str, validate: Callable[[dict[str, Any]], Answer]) -> Answer:
+    async def ask[Answer](
+        self, system: str, user: str, validate: Callable[[dict[str, Any]], Answer], before_call: BeforeCall
+    ) -> Answer:
         """Ask one question and return its validated answer.
 
         ``validate`` turns the model's JSON object into the answer or raises
         ``InvalidModelOutput``; only validated answers are returned or cached.
+        ``before_call`` runs after the cache and before the model, so an answer
+        the cache already holds spends no quota; it may refuse by raising.
         ``Any`` mirrors JSON. Every failure is the same ``ApiError``.
         """
         cache_key = hashlib.sha256(f"{system}\x00{user}".encode()).hexdigest()
         cached = self._cached(cache_key)
         if cached is not None:
             return cached  # type: ignore[no-any-return]
+        await before_call()
         try:
             answer = validate(await self._complete(system, user))
         except InvalidModelOutput as error:

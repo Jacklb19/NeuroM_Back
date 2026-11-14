@@ -23,7 +23,7 @@ from app.constants import PLAN_SUGGESTION_PATH, PROGRESS_SUMMARY_PATH, SESSION_S
 from app.progress_assistance import ProgressNarrative, ProgressRequest, explain_progress
 from app.errors import ApiError, ErrorCode
 from app.language_model import LanguageModelGateway
-from app.quota import spend_language_model_call
+from app.quota import language_model_quota
 from app.security import Identity, current_identity, gateway_of
 from app.supabase import SupabaseGateway
 
@@ -53,12 +53,11 @@ async def progress_summary(
     Requires an account, following the existing aggregated session summary.
     No history is read or stored, and only the caller's supplied figures are
     described. Free-form text and unknown references from the model are refused.
-    Each call spends one of the account's daily calls (ADR-54).
+    Each call that reaches the model spends one of the account's daily calls (ADR-54).
     """
     if not request.consent:
         raise ApiError(HTTPStatus.FORBIDDEN, ErrorCode.CONSENT_REQUIRED)
-    await spend_language_model_call(supabase, identity)
-    return await explain_progress(request, model)
+    return await explain_progress(request, model, language_model_quota(supabase, identity))
 
 
 @router.post(PLAN_SUGGESTION_PATH, summary="Propose a session plan from the chosen goals")
@@ -68,10 +67,9 @@ async def propose_plan(plan: PlanRequest, identity: Account, model: LanguageMode
     Needs an account, so the language model cannot be used anonymously, but
     not the second factor: goals and an hour of the day are not health data.
     Nothing is stored. The person can always keep their own plan. Each call
-    spends one of the account's daily calls (ADR-54).
+    that reaches the model spends one of the account's daily calls (ADR-54).
     """
-    await spend_language_model_call(supabase, identity)
-    return await suggest_plan(plan, model)
+    return await suggest_plan(plan, model, language_model_quota(supabase, identity))
 
 
 @router.post(_SUMMARY_PATH, summary="Tell a session in plain words")
@@ -87,10 +85,11 @@ async def summarize(
     (``consent``). Nothing is read or stored: the answer contains no data the
     caller did not send, which is why an account is enough and the second
     factor is not asked for. ``session_id`` only names the session. Each call
-    spends one of the account's daily calls (ADR-54).
+    that reaches the model spends one of the account's daily calls (ADR-54).
     """
     del session_id  # Part of the route of Table 15; the API has no use for it.
     if not request.consent:
         raise ApiError(HTTPStatus.FORBIDDEN, ErrorCode.CONSENT_REQUIRED)
-    await spend_language_model_call(supabase, identity)
-    return await summarize_session(request.figures, request.locale, model)
+    return await summarize_session(
+        request.figures, request.locale, model, language_model_quota(supabase, identity)
+    )
