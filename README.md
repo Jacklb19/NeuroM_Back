@@ -21,7 +21,7 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 |---|---|---|---|
 | `GET /health` | Estado del servicio. Público. | 200 | |
 | `POST /sessions` | Guarda una sesión terminada con sus indicadores, en una sola transacción. | 201 si la crea; 200 si ya existía | 403 `consent_required`, 409 `session_conflict` |
-| `GET /sessions` | Lista las sesiones de la persona, sin indicadores, de la más reciente a la más antigua. | 200 | |
+| `GET /sessions` | Lista las sesiones de la persona, sin indicadores, de la más reciente a la más antigua: como mucho 500, en `sessions`. `truncated` vale `true` si quedaron fuera sesiones más antiguas; el cliente no debe tomar su ausencia como un borrado. | 200 | |
 | `GET /sessions/{id}` | Una sesión con sus indicadores. | 200 | 404 `not_found` |
 | `DELETE /sessions/{id}` | Borra una sesión y sus indicadores. | 204 | 404 `not_found` |
 | `DELETE /account` | Borra la cuenta de quien llama y, en cascada, todo lo suyo. | 204 | |

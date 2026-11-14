@@ -144,6 +144,10 @@ class SessionList(BaseModel):
     """The person's sessions, newest first."""
 
     sessions: list[SessionSummary]
+    truncated: bool = Field(
+        description="True when the person has more sessions than the list returns; "
+        "the older ones are left out, so a client must not read their absence as a deletion."
+    )
 
 
 class SavedSession(BaseModel):
