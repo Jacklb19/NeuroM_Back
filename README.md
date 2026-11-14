@@ -29,9 +29,9 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 | `GET /recordings` | Lista las grabaciones enviadas, sin los latidos. | 200 | |
 | `DELETE /recordings/{id}` | Retira una grabación enviada. | 204 | 404 `not_found` |
 | `GET /models/classifier` | La última versión publicada del clasificador, con su archivo. Basta una cuenta. | 200 | 404 `not_found` si no hay ninguna publicada |
-| `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 502 `language_model_unavailable` |
-| `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 502 `language_model_unavailable` |
-| `POST /progress/summary` | Elige una explicación verificada de hasta tres comparaciones calculadas en el dispositivo (ADR-48). No lee ni guarda historial. | 200 | 403 `consent_required`, 502 `language_model_unavailable` |
+| `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 429 `rate_limited`, 502 `language_model_unavailable` |
+| `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 429 `rate_limited`, 502 `language_model_unavailable` |
+| `POST /progress/summary` | Elige una explicación verificada de hasta tres comparaciones calculadas en el dispositivo (ADR-48). No lee ni guarda historial. | 200 | 403 `consent_required`, 429 `rate_limited`, 502 `language_model_unavailable` |
 
 Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no verifica), 403 `second_factor_required`, 422 `invalid_request` y 502 `storage_unavailable` (Supabase no respondió o respondió algo inesperado).
 
@@ -44,7 +44,7 @@ Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no v
 ### Grabaciones para entrenar y versiones del clasificador (ADR-32, ADR-33)
 
 - **Grabaciones:** son latidos, así que las tres rutas exigen segundo factor (`aal2`) y se guardan con el token de la persona. El cuerpo es `{"id", "participant", "recorded_at", "source_kind", "segments", "consent"}`: solo fuentes que miden a una persona (`ble` o `camera`), los tres tramos del protocolo en orden (`rest`, `slow_breathing`, `demanding_task`), cada uno con `planned_seconds`, `beat_times_ms` y `rr_ms`, y `consent: true`. Sin consentimiento responde 403 y no guarda nada. No lleva nombre ni correo: `participant` es un código al azar del dispositivo. La persona puede retirarlas cuando quiera y caen al borrar la cuenta.
-- **Clasificador:** `GET /models/classifier` devuelve `{"version", "sha256", "published_at", "model"}`. Solo sirve el archivo si coincide con la suma de comprobación registrada al publicarlo; si no, responde 502. La app valida el contenido de nuevo y, sin cuenta o sin versión publicada, usa el modelo con el que viene.
+- **Clasificador:** `GET /models/classifier` devuelve `{"version", "sha256", "published_at", "model"}`. Solo sirve el archivo si coincide con la suma de comprobación registrada al publicarlo; si no, responde 502. La app valida el contenido de nuevo y, sin conexión o sin versión publicada, usa el modelo con el que viene.
 - **Nada se entrena ni se publica desde la API.** El entrenamiento corre fuera (`training/`, flujo `train-model.yml`) y una versión solo existe cuando una persona la aprueba. Ver `training/README.md`.
 
 ### Modelo de lenguaje (ADR-05, ADR-08)
@@ -172,8 +172,10 @@ El esquema vive como migraciones SQL en `supabase/migrations/`, una por cambio:
 
 - `20260928000000_initial_schema.sql`: `profiles`, `plans`, `sessions`, `session_metrics` y `model_versions`, con sus políticas de propiedad.
 - `20261011000000_cloud_sessions.sql`: consentimiento en `profiles`, los campos de una sesión del dispositivo, el segundo factor (`aal2`) como política restrictiva en `sessions` y `session_metrics`, y las funciones `save_session`, `list_sessions`, `get_session` y `delete_session`, que la API llama con el token de la persona.
-
 - `20261012000000_training_recordings.sql`: `training_recordings` (grabaciones guiadas, con segundo factor y borrables por su dueño), `training_assets` (archivos del entrenamiento, solo para la clave de servicio), el archivo de cada versión en `model_versions` y las funciones `save_training_recording`, `list_training_recordings`, `delete_training_recording` y `current_classifier`. Su prueba es `supabase/tests/training_recordings_test.sql`, que se ejecuta igual que la anterior.
+- `20261020000000_pulse_only_sessions.sql`: `signal_mode` en `sessions` para las sesiones de solo pulso (ADR-51); las sesiones anteriores quedan con intervalos entre latidos. Vuelve a crear `save_session`, `list_sessions` y `get_session` con el campo nuevo, sin cambiar propiedad, consentimiento ni segundo factor.
+- `20261102000000_language_model_quota.sql`: la cuota diaria del modelo de lenguaje (ADR-54). Crea la tabla `language_model_usage`, con RLS y sin políticas, y la función `consume_language_model_quota`, `security definer` y concedida solo a `authenticated`.
+- `20261102010000_database_limits.sql`: la base repite los límites que comprueba la API (tamaños, rangos y cotas por muestra) con restricciones `CHECK ... NOT VALID`, que valen para toda fila nueva sin revisar las existentes.
 
 Todas las tablas tienen seguridad a nivel de fila (RLS), y una prueba lo comprueba. Las migraciones nunca se aplican a la base remota desde aquí: se copian en el *SQL Editor* del panel de Supabase, en orden.
 
