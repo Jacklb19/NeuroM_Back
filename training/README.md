@@ -102,7 +102,7 @@ El modelo mejora fuera de la app, nunca dentro, y una versión nueva solo llega 
 
 1. Aplicar `supabase/migrations/20261012000000_training_recordings.sql` en el *SQL Editor* de Supabase.
 2. Subir la caché de WESAD, con `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` en la terminal: `.venv/Scripts/python store.py upload-cache`. WESAD es de uso científico y no comercial: la caché va a una tabla privada, no al repositorio.
-3. En GitHub, en el repositorio del back: *Settings → Secrets and variables → Actions*, crear `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`.
+3. En GitHub, en el repositorio del back: *Settings → Secrets and variables → Actions*, crear `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`. Sin ellos el flujo se detiene en el primer paso con «missing environment variables» y el nombre de las que faltan.
 4. *Settings → Environments*: crear `model-release` y ponerte como *Required reviewer*. Ese es el clic que publica.
 
 La clave de servicio queda así en un segundo lugar (GitHub, además de Vercel). El flujo solo corre programado o a mano, nunca en un pull request, para que no quede al alcance de código ajeno.
@@ -121,5 +121,6 @@ Al publicar una versión nueva se actualizan sus cifras en `front/docs/modelo.md
 | `test_collected.py` | Pruebas del lector. |
 | `store.py`, `release.py` | Lo que el reentrenamiento trae de la base de datos y cuándo se puede publicar un modelo. |
 | `test_release.py` | Sus pruebas. |
+| `test_store.py` | Comprueba que `store.py` se detiene con un mensaje claro, que nombra las variables sin mostrar sus valores, si falta `SUPABASE_URL` o `SUPABASE_SERVICE_ROLE_KEY`. Solo usa la biblioteca estándar: `python -m unittest test_store`. |
 
 Los valores de `features.py` copian los del frontend (cada uno indica su archivo de origen). Si cambian allí, se cambian aquí y se entrena de nuevo.
