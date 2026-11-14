@@ -2,6 +2,7 @@
 
 from http import HTTPStatus
 from typing import Any, Final
+from uuid import UUID
 
 import httpx2
 import pytest
@@ -183,7 +184,45 @@ def test_lists_the_sessions_the_database_returns_for_the_person(
     assert returned["id"] == SESSION_ID
     assert returned["goals"] == ["relax", "slow_breathing"]
     assert "samples" not in returned
-    assert supabase.calls[0].arguments == {"p_limit": SESSION_LIST_LIMIT}
+    assert response.json()["truncated"] is False
+    # One more than the limit, to know whether older sessions were left out.
+    assert supabase.calls[0].arguments == {"p_limit": SESSION_LIST_LIMIT + 1}
+
+
+def _listed_session(index: int) -> dict[str, object]:
+    """A summary as the database lists it, with its own id."""
+    listed = {key: value for key, value in session_body().items() if key != "samples"}
+    return listed | {
+        "id": str(UUID(int=index + 1)),
+        "started_at": "2026-10-07T10:00:00+00:00",
+        "ended_at": "2026-10-07T10:20:00+00:00",
+    }
+
+
+def test_says_when_older_sessions_were_left_out_of_the_list(
+    client: TestClient, supabase: FakeSupabase, headers: dict[str, str]
+) -> None:
+    supabase.results["list_sessions"] = [_listed_session(index) for index in range(SESSION_LIST_LIMIT + 1)]
+
+    response = client.get(SESSIONS_URL, headers=headers)
+
+    assert response.status_code == HTTPStatus.OK
+    body = response.json()
+    assert body["truncated"] is True
+    assert len(body["sessions"]) == SESSION_LIST_LIMIT
+    # The newest ones are kept: the one left out is the last the database listed.
+    assert body["sessions"][-1]["id"] == str(UUID(int=SESSION_LIST_LIMIT))
+
+
+def test_a_list_of_exactly_the_limit_is_complete(
+    client: TestClient, supabase: FakeSupabase, headers: dict[str, str]
+) -> None:
+    supabase.results["list_sessions"] = [_listed_session(index) for index in range(SESSION_LIST_LIMIT)]
+
+    body = client.get(SESSIONS_URL, headers=headers).json()
+
+    assert body["truncated"] is False
+    assert len(body["sessions"]) == SESSION_LIST_LIMIT
 
 
 def test_unexpected_list_from_the_database_is_not_passed_on(

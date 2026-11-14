@@ -66,9 +66,15 @@ async def save_session(
 
 @router.get(SESSIONS_PATH, summary="List the person's sessions")
 async def list_sessions(identity: HealthDataIdentity, gateway: Gateway) -> SessionList:
-    """Sessions without their samples, newest first."""
-    listed = await gateway.call_function("list_sessions", {"p_limit": SESSION_LIST_LIMIT}, identity.token)
-    return SessionList(sessions=_validated(_SUMMARIES, listed))
+    """Sessions without their samples, newest first, at most ``SESSION_LIST_LIMIT``.
+
+    ``truncated`` says whether older sessions were left out. It is found by
+    asking the database for one session more than the limit, so it needs no
+    change to the database.
+    """
+    listed = await gateway.call_function("list_sessions", {"p_limit": SESSION_LIST_LIMIT + 1}, identity.token)
+    sessions = _validated(_SUMMARIES, listed)
+    return SessionList(sessions=sessions[:SESSION_LIST_LIMIT], truncated=len(sessions) > SESSION_LIST_LIMIT)
 
 
 @router.get(_SESSION_PATH, summary="Read one session with its samples")
