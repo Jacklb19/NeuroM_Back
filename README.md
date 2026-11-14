@@ -19,7 +19,7 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 
 | Método y ruta | Qué hace | Éxito | Errores propios |
 |---|---|---|---|
-| `GET /health` | Estado del servicio. Público. | 200 | |
+| `GET /health` | Estado del servicio y de Supabase: `{"status", "version", "supabase"}`. Público. Mira Supabase con la clave pública, como mucho cada 30 s. | 200 | 503 con `status: "degraded"` si no alcanza Supabase |
 | `POST /sessions` | Guarda una sesión terminada con sus indicadores, en una sola transacción. | 201 si la crea; 200 si ya existía | 403 `consent_required`, 409 `session_conflict` |
 | `GET /sessions` | Lista las sesiones de la persona, sin indicadores, de la más reciente a la más antigua: como mucho 500, en `sessions`. `truncated` vale `true` si quedaron fuera sesiones más antiguas; el cliente no debe tomar su ausencia como un borrado. | 200 | |
 | `GET /sessions/{id}` | Una sesión con sus indicadores. | 200 | 404 `not_found` |
@@ -143,7 +143,7 @@ Get-Content .env | ForEach-Object { if ($_ -match '^\s*([A-Z_][A-Z0-9_]*)=(.*)$'
 .venv\Scripts\python -m uvicorn app.main:app --reload
 ```
 
-Comprobación: `http://127.0.0.1:8000/v1/health` responde `{"status":"ok","version":"0.1.0"}` y la documentación OpenAPI está en `http://127.0.0.1:8000/docs`.
+Comprobación: `http://127.0.0.1:8000/v1/health` responde `{"status":"ok","version":"0.1.0","supabase":"ok"}` y la documentación OpenAPI está en `http://127.0.0.1:8000/docs`.
 
 ## Pruebas
 

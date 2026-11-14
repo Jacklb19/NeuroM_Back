@@ -20,6 +20,7 @@ from app.constants import (
 )
 from app.errors import UnexpectedErrorMiddleware, exception_handlers, openapi_error_responses
 from app.headers import SecurityHeadersMiddleware
+from app.health_probe import SupabaseProbe
 from app.language_model import LanguageModelGateway
 from app.routes import API_ROUTERS
 from app.security import TokenVerifier, issuer_of
@@ -62,6 +63,7 @@ def create_app(
     # One gateway and one verifier per application: connections and signing keys
     # are reused across requests while the function stays warm.
     app.state.supabase = SupabaseGateway(resolved, supabase_transport)
+    app.state.supabase_probe = SupabaseProbe(app.state.supabase)
     app.state.token_verifier = TokenVerifier(app.state.supabase, issuer_of(str(resolved.supabase_url)))
     app.state.language_model = LanguageModelGateway(resolved, language_model_transport)
     # The middleware added last is the outermost. The catch-all goes first so
