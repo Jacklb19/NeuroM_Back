@@ -2,7 +2,13 @@
 
 API de NeuroMelody: aplicación web de música generativa adaptada en tiempo real a señales fisiológicas, como apoyo no farmacológico al manejo del dolor crónico.
 
-El frontend vive en un repositorio aparte: [NeuroMelody](https://github.com/Jacklb19/NeuroMelody). La especificación completa del proyecto (requisitos, arquitectura y decisiones) está en su carpeta `docs/`.
+El frontend vive en un repositorio aparte: [NeuroMelody](https://github.com/Jacklb19/NeuroMelody). La especificación completa del proyecto (requisitos, arquitectura y decisiones) está en su carpeta [`docs/`](https://github.com/Jacklb19/NeuroMelody/blob/main/docs), en particular [`definicion-proyecto.md`](https://github.com/Jacklb19/NeuroMelody/blob/main/docs/definicion-proyecto.md) y [`decisiones.md`](https://github.com/Jacklb19/NeuroMelody/blob/main/docs/decisiones.md), a los que remiten los ADR citados aquí.
+
+| | |
+|---|---|
+| API publicada | <https://neuro-m-back.vercel.app/v1/health> |
+| Aplicación publicada | <https://neruomelody.vercel.app> |
+| Documentación OpenAPI | `/docs` en local y en las vistas previas; en producción no se publica (ADR-54) |
 
 ## Responsabilidad
 
@@ -68,7 +74,7 @@ Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py
 
 La cuenta de Groq debe tener activada la retención cero en *Data Controls* (ADR-08).
 
-**Explicación del progreso (ADR-48):** pide cuenta y consentimiento por petición, siguiendo la regla del resumen agregado. Solo admite catálogos, conteos de 5 a 100000 y medianas acotadas de hasta tres comparaciones. No admite notas, fechas, ids de sesiones ni señal. El modelo devuelve únicamente una presentación (`overview` o `balance`) y las referencias exactas recibidas, en su orden original; cualquier prosa, cifra adicional o referencia inventada se rechaza. La interfaz utiliza frases revisadas y sus cifras originales. Contrato completo en `../front/docs/contrato-progress-summary.md`. No requiere migración ni secretos nuevos.
+**Explicación del progreso (ADR-48):** pide cuenta y consentimiento por petición, siguiendo la regla del resumen agregado. Solo admite catálogos, conteos de 5 a 100000 y medianas acotadas de hasta tres comparaciones. No admite notas, fechas, ids de sesiones ni señal. El modelo devuelve únicamente una presentación (`overview` o `balance`) y las referencias exactas recibidas, en su orden original; cualquier prosa, cifra adicional o referencia inventada se rechaza. La interfaz utiliza frases revisadas y sus cifras originales. Contrato completo en [`contrato-progress-summary.md`](https://github.com/Jacklb19/NeuroMelody/blob/main/docs/contrato-progress-summary.md). No requiere migración ni secretos nuevos.
 
 **Probarlo con la clave real** (las pruebas automáticas nunca llaman al servicio). Con las variables de `.env` cargadas en la terminal, como en «Ejecutar en local»:
 
@@ -89,14 +95,18 @@ app/
   main.py         Punto de entrada: Vercel sirve la instancia `app` de este archivo.
   factory.py      create_app(): CORS, manejo de errores y rutas bajo /v1.
   config.py       Settings: variables de entorno validadas al arrancar.
-  constants.py    Valores ajustables con nombre: prefijo, versión, CORS.
-  errors.py       Códigos de error y respuestas {"code": ...}.
+  constants.py    Valores ajustables con nombre: prefijo, versión, CORS, límites.
+  errors.py       Códigos de error, respuestas {"code": ...} y el 500 inesperado con CORS.
+  headers.py      Cabeceras de seguridad de toda respuesta (no-store, nosniff).
   security.py     Verificación del token y del segundo factor.
   supabase.py     Llamadas a Supabase: claves de firma, funciones de la base y borrado de cuenta.
-  schemas.py      Forma de una sesión y de sus indicadores.
+  health_probe.py Comprobación de Supabase para el estado del servicio, como mucho cada 30 s.
+  schemas.py      Forma de una sesión, de sus indicadores y de una grabación guiada.
   language_model.py  Llamadas al modelo de lenguaje: reintento, caché y errores.
+  quota.py        Cuota diaria de llamadas al modelo por cuenta (ADR-54).
   assistance.py   Qué se le pregunta al modelo y qué se acepta de él (plantillas y esquema cerrado).
-  routes/         Un módulo por recurso (health.py, sessions.py, account.py, assistance.py).
+  progress_assistance.py  Explicaciones cerradas del progreso (ADR-48).
+  routes/         Un módulo por recurso: health.py, sessions.py, account.py, training.py y assistance.py.
 tests/            Pruebas con pytest (sin secretos reales; Supabase se simula en memoria).
 supabase/         Migraciones SQL (ADR-22), su prueba y la configuración de la base local.
 training/         Entrenamiento del clasificador (ADR-32); no forma parte de la API.
@@ -117,6 +127,7 @@ Las cinco primeras variables son obligatorias. `.env.example` las lista sin valo
 | `GROQ_API_KEY` | Clave del modelo de lenguaje (ADR-08). Solo vive en el servidor. |
 | `ALLOWED_ORIGINS` | Orígenes del frontend autorizados por CORS, separados por comas, por ejemplo `https://<frontend>.vercel.app,http://localhost:5173`. |
 | `VERCEL_PREVIEW_PROJECT`, `VERCEL_PREVIEW_TEAM` | Opcionales, juntas: nombre del proyecto de Vercel del frontend y slug del equipo. Autorizan solo `https://<proyecto>-<hash de 9>-<equipo>.vercel.app`, las vistas previas de ese proyecto. |
+| `VERCEL_ENV` | La define Vercel en cada despliegue; no se escribe a mano. Con `production`, la API no publica `/docs`, `/redoc` ni `/openapi.json`. |
 
 Cada origen se escribe exactamente como lo envía el navegador: `http` o `https`, en minúsculas, sin comodines, sin ruta ni barra final y sin puerto por defecto. El navegador compara el origen carácter por carácter, así que la API rechaza al arrancar cualquier otra forma en lugar de ignorarla en silencio. CORS no admite credenciales: la identidad viaja como JWT en la cabecera `Authorization` (ADR-19).
 
@@ -152,7 +163,7 @@ Comprobación: `http://127.0.0.1:8000/v1/health` responde `{"status":"ok","versi
 .venv/Scripts/python -m ruff check .   # linter
 ```
 
-La cobertura (`pytest-cov`, umbral del 70 % de la especificación) y las reglas de `ruff` se configuran en `pyproject.toml`.
+La cobertura (`pytest-cov`, umbral del 70 % de la especificación) y las reglas de `ruff` se configuran en `pyproject.toml`. Estado al 15 nov 2026: 291 pruebas y cobertura del 97 %.
 
 Cubren la identidad (sin token, token mal firmado, caducado, de otro proyecto o sin segundo factor), las sesiones (guardar, repetir el envío, listar, leer, borrar, sesión ajena, datos inválidos y fallos de la base), el borrado de cuenta, el plan y el resumen con el modelo de lenguaje simulado (valores fuera del catálogo, salidas fuera del esquema o con lenguaje clínico, reintento, caché, consentimiento, que solo viajen cifras agregadas y que ni la clave ni el texto queden en los registros), el estado del servicio, CORS (origen permitido y no permitido, verificación previa), la carga de la configuración (variables ausentes o inválidas nombradas sin revelar valores, secretos ocultos, coincidencia con `.env.example`), el formato de los errores (también el 500 inesperado con CORS y su documentación en el OpenAPI), el punto de entrada y la coherencia de los archivos del proyecto. La integración continua (`.github/workflows/ci.yml`) tiene tres trabajos. El primero instala `requirements-dev.txt` con el Python de `.python-version`, pasa `ruff` y ejecuta la batería con cobertura. El segundo instala `training/requirements.txt` y ejecuta las pruebas de `training/`. El tercero levanta la base local con la CLI de Supabase, aplica las migraciones en orden y ejecuta `supabase/tests/*.sql`, igual que en «Probar las migraciones en local».
 
@@ -160,7 +171,7 @@ Dependencias: `requirements.txt` contiene solo las de ejecución, fijadas con to
 
 ## Despliegue en Vercel
 
-El despliegue lo dispara el push a GitHub mediante la integración Git de Vercel; ningún agente despliega ni cambia variables remotas.
+El despliegue lo dispara el push a GitHub mediante la integración Git de Vercel: `main` va a producción y cualquier otra rama a una vista previa.
 
 - **Proyecto:** uno propio para este repositorio (ADR-19), con *Root Directory* en la raíz del repositorio. Vercel detecta FastAPI en `app/main.py`, instala las dependencias de `pyproject.toml` y usa Python 3.13 por `.python-version`.
 - **Variables:** definir las variables de la tabla anterior en *Settings → Environment Variables* del proyecto. `ALLOWED_ORIGINS` lleva el dominio de producción del frontend.
@@ -175,7 +186,7 @@ El esquema vive como migraciones SQL en `supabase/migrations/`, una por cambio:
 
 - `20260928000000_initial_schema.sql`: `profiles`, `plans`, `sessions`, `session_metrics` y `model_versions`, con sus políticas de propiedad.
 - `20261011000000_cloud_sessions.sql`: consentimiento en `profiles`, los campos de una sesión del dispositivo, el segundo factor (`aal2`) como política restrictiva en `sessions` y `session_metrics`, y las funciones `save_session`, `list_sessions`, `get_session` y `delete_session`, que la API llama con el token de la persona.
-- `20261012000000_training_recordings.sql`: `training_recordings` (grabaciones guiadas, con segundo factor y borrables por su dueño), `training_assets` (archivos del entrenamiento, solo para la clave de servicio), el archivo de cada versión en `model_versions` y las funciones `save_training_recording`, `list_training_recordings`, `delete_training_recording` y `current_classifier`. Su prueba es `supabase/tests/training_recordings_test.sql`, que se ejecuta igual que la anterior.
+- `20261012000000_training_recordings.sql`: `training_recordings` (grabaciones guiadas, con segundo factor y borrables por su dueño), `training_assets` (archivos del entrenamiento, solo para la clave de servicio), el archivo de cada versión en `model_versions` y las funciones `save_training_recording`, `list_training_recordings`, `delete_training_recording` y `current_classifier`. Su prueba es `supabase/tests/training_recordings_test.sql`.
 - `20261020000000_pulse_only_sessions.sql`: `signal_mode` en `sessions` para las sesiones de solo pulso (ADR-51); las sesiones anteriores quedan con intervalos entre latidos. Vuelve a crear `save_session`, `list_sessions` y `get_session` con el campo nuevo, sin cambiar propiedad, consentimiento ni segundo factor.
 - `20261102000000_language_model_quota.sql`: la cuota diaria del modelo de lenguaje (ADR-54). Crea la tabla `language_model_usage`, con RLS y sin políticas, y la función `consume_language_model_quota`, `security definer` y concedida solo a `authenticated`.
 - `20261102010000_database_limits.sql`: la base repite los límites que comprueba la API (tamaños, rangos y cotas por muestra) con restricciones `CHECK ... NOT VALID`, que valen para toda fila nueva sin revisar las existentes.
@@ -190,11 +201,17 @@ Con Docker en marcha, la CLI de Supabase (versión fija, por `npx`, sin iniciar 
 ```bash
 mkdir -p ../sb-local && cp -r supabase ../sb-local/
 npx supabase@2.120.0 db start --workdir ../sb-local
-docker exec -i supabase_db_neuromelody-local psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/cloud_sessions_test.sql
+for test in supabase/tests/*.sql; do
+  docker exec -i supabase_db_neuromelody-local psql -U postgres -v ON_ERROR_STOP=1 < "$test"
+done
 npx supabase@2.120.0 stop --workdir ../sb-local --no-backup
 ```
 
-`supabase/tests/cloud_sessions_test.sql` simula las peticiones como lo hace Supabase (rol `authenticated` y los datos del token) y comprueba el consentimiento, el segundo factor, que nadie alcanza la sesión de otra persona, el envío repetido, el borrado de una sesión y la cascada al borrar la cuenta. Corre en una transacción que se deshace al final.
+Las pruebas simulan las peticiones como lo hace Supabase (rol `authenticated` y los datos del token) y corren cada una en una transacción que se deshace al final:
+
+- `cloud_sessions_test.sql`: el consentimiento, el segundo factor, que nadie alcanza la sesión de otra persona, el envío repetido, el borrado de una sesión y la cascada al borrar la cuenta.
+- `training_recordings_test.sql`: lo mismo para las grabaciones guiadas, que una fuente que no mide a nadie se rechaza y que una persona con sesión no alcanza los archivos del entrenamiento ni publica un modelo.
+- `account_limits_test.sql`: los topes de 2000 sesiones y 20 grabaciones por cuenta, que reenviar una sesión guardada sigue funcionando y que otra cuenta no se ve afectada.
 
 ## Ramas
 
