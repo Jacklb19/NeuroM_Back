@@ -26,6 +26,7 @@ select set_config('test.melody', '{
   "profile": "immersive",
   "level": "target",
   "position_seconds": 720,
+  "duration_minutes": 30,
   "music_mix": 1,
   "ambience_mix": 0.6,
   "synthesis_version": 1,
@@ -85,6 +86,19 @@ begin
   assert v_state = '23514', 'an unknown instrument breaks a check, got ' || v_state;
 end $$;
 
+-- 4b. The length is one of the four, and the saved point lies within it (ADR-67).
+do $$
+declare
+  v_state text := 'no error';
+begin
+  begin
+    perform public.save_melody(jsonb_set(current_setting('test.melody')::jsonb, '{id}', '"019a8c8e-2b10-7000-8000-0000000000b3"') || '{"duration_minutes": 15, "position_seconds": 1000}');
+  exception when others then
+    v_state := sqlstate;
+  end;
+  assert v_state = '23514', 'a point past the end breaks a check, got ' || v_state;
+end $$;
+
 -- 5. Ana's account is filled up to 50; the next one is refused with 54000.
 reset role;
 insert into public.melodies (id, owner_id, name, seed, instrument, ambience, profile, level, position_seconds,
@@ -104,6 +118,9 @@ begin
     v_state := sqlstate;
   end;
   assert v_state = '54000', 'the 51st melody is refused, got ' || v_state;
+  -- Rows written before the length existed take the default of 30 minutes.
+  assert (select bool_and((item ->> 'duration_minutes')::integer = 30) from jsonb_array_elements(public.list_melodies()) item),
+    'every melody is listed with its length';
   assert public.delete_melody('019a8c8e-2b10-7000-8000-000000000001'), 'Ana deletes her own melody';
 end $$;
 

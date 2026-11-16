@@ -46,6 +46,9 @@ MAX_MELODY_SEED: Final = 2**31 - 1
 MAX_MELODY_POSITION_SECONDS: Final = 2 * 60 * 60
 """Furthest point a melody can be saved at. Mirrors the frontend's ``MAX_START_AT_S``."""
 
+MELODY_DURATIONS_MINUTES: Final = (15, 30, 45, 60)
+"""Lengths a melody can have (ADR-67). Mirrors the frontend's ``LISTEN_DURATIONS_MIN``."""
+
 MAX_SYNTHESIS_VERSION: Final = 32_767
 """Largest version of the synthesizer a melody can name: what a ``smallint`` column holds."""
 

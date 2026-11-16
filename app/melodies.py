@@ -8,7 +8,7 @@ rejected, so nothing else can be stored.
 """
 
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
@@ -72,6 +72,8 @@ class MelodyContent(_Strict):
     profile: SoundProfile
     level: MusicLevel
     position_seconds: int = Field(ge=0, le=MAX_MELODY_POSITION_SECONDS)
+    duration_minutes: Literal[15, 30, 45, 60]
+    """Length of the piece (ADR-67); a melody saved before it existed is listed with 30."""
     music_mix: Mix
     ambience_mix: Mix
     synthesis_version: int = Field(ge=1, le=MAX_SYNTHESIS_VERSION)
@@ -85,6 +87,8 @@ class MelodyContent(_Strict):
             raise ValueError("the name cannot start or end with spaces")
         if self.updated_at < self.created_at:
             raise ValueError("a melody cannot change before it was created")
+        if self.position_seconds > self.duration_minutes * 60:
+            raise ValueError("the saved point lies within the piece")
         return self
 
 

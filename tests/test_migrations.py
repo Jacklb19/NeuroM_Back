@@ -22,6 +22,7 @@ from app.constants import (
     MAX_STAGE_BEATS,
     MAX_STAGE_SECONDS,
     MAX_VARIATION_MS,
+    MELODY_DURATIONS_MINUTES,
     MELODY_NAME_MAX_CHARS,
     RECORDING_STAGES,
     SUMMARY_MAX_CHARS,
@@ -33,6 +34,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "supabase" / "migratio
 LIMITS_MIGRATION = MIGRATIONS_DIR / "20261102010000_database_limits.sql"
 ACCOUNT_LIMITS_MIGRATION = MIGRATIONS_DIR / "20261114000000_account_storage_limits.sql"
 MELODIES_MIGRATION = MIGRATIONS_DIR / "20261117000000_melodies.sql"
+MELODY_DURATION_MIGRATION = MIGRATIONS_DIR / "20261117010000_melody_duration.sql"
 
 CREATE_TABLE = re.compile(
     r"create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?(\w+)\s*\(", re.IGNORECASE
@@ -112,3 +114,9 @@ def test_database_repeats_the_shape_and_the_limit_of_a_melody() -> None:
     assert f"between 0 and {MAX_MELODY_POSITION_SECONDS}" in sql
     assert re.search(rf">= {MAX_MELODIES_PER_ACCOUNT}\b", sql)
     assert "errcode = '54000'" in sql
+
+
+def test_database_knows_every_length_of_a_melody() -> None:
+    """The lengths the API accepts are the ones the table accepts (ADR-67)."""
+    sql = MELODY_DURATION_MIGRATION.read_text(encoding="utf-8")
+    assert f"duration_minutes in ({', '.join(map(str, MELODY_DURATIONS_MINUTES))})" in sql
