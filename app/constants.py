@@ -102,6 +102,15 @@ JWKS_MIN_REFRESH_SECONDS: Final = 30
 """Shortest time between two key downloads, so tokens naming unknown keys cannot
 make the API flood Supabase with requests."""
 
+HEALTH_CHECK_CACHE_SECONDS: Final = 30
+"""How long ``GET /v1/health`` reuses its last look at Supabase: polling it never floods the project."""
+
+MAX_SESSIONS_PER_ACCOUNT: Final = 2000
+"""Most sessions one account keeps in the cloud; the database enforces it (ADR-63)."""
+
+MAX_RECORDINGS_PER_ACCOUNT: Final = 20
+"""Most guided recordings one account keeps in the cloud; the database enforces it (ADR-63)."""
+
 SESSION_LIST_LIMIT: Final = 500
 """Most sessions returned by ``GET /v1/sessions``, newest first."""
 

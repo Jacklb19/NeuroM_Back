@@ -19,19 +19,19 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 
 | Método y ruta | Qué hace | Éxito | Errores propios |
 |---|---|---|---|
-| `GET /health` | Estado del servicio. Público. | 200 | |
-| `POST /sessions` | Guarda una sesión terminada con sus indicadores, en una sola transacción. | 201 si la crea; 200 si ya existía | 403 `consent_required`, 409 `session_conflict` |
-| `GET /sessions` | Lista las sesiones de la persona, sin indicadores, de la más reciente a la más antigua. | 200 | |
+| `GET /health` | Estado del servicio y de Supabase: `{"status", "version", "supabase"}`. Público. Mira Supabase con la clave pública, como mucho cada 30 s. | 200 | 503 con `status: "degraded"` si no alcanza Supabase |
+| `POST /sessions` | Guarda una sesión terminada con sus indicadores, en una sola transacción. | 201 si la crea; 200 si ya existía | 403 `consent_required`, 409 `session_conflict`, 409 `limit_reached` (la cuenta ya guarda 2000 sesiones) |
+| `GET /sessions` | Lista las sesiones de la persona, sin indicadores, de la más reciente a la más antigua: como mucho 500, en `sessions`. `truncated` vale `true` si quedaron fuera sesiones más antiguas; el cliente no debe tomar su ausencia como un borrado. | 200 | |
 | `GET /sessions/{id}` | Una sesión con sus indicadores. | 200 | 404 `not_found` |
 | `DELETE /sessions/{id}` | Borra una sesión y sus indicadores. | 204 | 404 `not_found` |
 | `DELETE /account` | Borra la cuenta de quien llama y, en cascada, todo lo suyo. | 204 | |
-| `POST /recordings` | Guarda una grabación guiada que la persona acepta enviar para entrenar el modelo. | 201 si la crea; 200 si ya existía | 403 `consent_required` |
+| `POST /recordings` | Guarda una grabación guiada que la persona acepta enviar para entrenar el modelo. | 201 si la crea; 200 si ya existía | 403 `consent_required`, 409 `limit_reached` (la cuenta ya guarda 20 grabaciones) |
 | `GET /recordings` | Lista las grabaciones enviadas, sin los latidos. | 200 | |
 | `DELETE /recordings/{id}` | Retira una grabación enviada. | 204 | 404 `not_found` |
 | `GET /models/classifier` | La última versión publicada del clasificador, con su archivo. Basta una cuenta. | 200 | 404 `not_found` si no hay ninguna publicada |
-| `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 502 `language_model_unavailable` |
-| `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 502 `language_model_unavailable` |
-| `POST /progress/summary` | Elige una explicación verificada de hasta tres comparaciones calculadas en el dispositivo (ADR-48). No lee ni guarda historial. | 200 | 403 `consent_required`, 502 `language_model_unavailable` |
+| `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 429 `rate_limited`, 502 `language_model_unavailable` |
+| `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 429 `rate_limited`, 502 `language_model_unavailable` |
+| `POST /progress/summary` | Elige una explicación verificada de hasta tres comparaciones calculadas en el dispositivo (ADR-48). No lee ni guarda historial. | 200 | 403 `consent_required`, 429 `rate_limited`, 502 `language_model_unavailable` |
 
 Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no verifica), 403 `second_factor_required`, 422 `invalid_request` y 502 `storage_unavailable` (Supabase no respondió o respondió algo inesperado).
 
@@ -44,7 +44,7 @@ Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no v
 ### Grabaciones para entrenar y versiones del clasificador (ADR-32, ADR-33)
 
 - **Grabaciones:** son latidos, así que las tres rutas exigen segundo factor (`aal2`) y se guardan con el token de la persona. El cuerpo es `{"id", "participant", "recorded_at", "source_kind", "segments", "consent"}`: solo fuentes que miden a una persona (`ble` o `camera`), los tres tramos del protocolo en orden (`rest`, `slow_breathing`, `demanding_task`), cada uno con `planned_seconds`, `beat_times_ms` y `rr_ms`, y `consent: true`. Sin consentimiento responde 403 y no guarda nada. No lleva nombre ni correo: `participant` es un código al azar del dispositivo. La persona puede retirarlas cuando quiera y caen al borrar la cuenta.
-- **Clasificador:** `GET /models/classifier` devuelve `{"version", "sha256", "published_at", "model"}`. Solo sirve el archivo si coincide con la suma de comprobación registrada al publicarlo; si no, responde 502. La app valida el contenido de nuevo y, sin cuenta o sin versión publicada, usa el modelo con el que viene.
+- **Clasificador:** `GET /models/classifier` devuelve `{"version", "sha256", "published_at", "model"}`. Solo sirve el archivo si coincide con la suma de comprobación registrada al publicarlo; si no, responde 502. La app valida el contenido de nuevo y, sin conexión o sin versión publicada, usa el modelo con el que viene.
 - **Nada se entrena ni se publica desde la API.** El entrenamiento corre fuera (`training/`, flujo `train-model.yml`) y una versión solo existe cuando una persona la aprueba. Ver `training/README.md`.
 
 ### Modelo de lenguaje (ADR-05, ADR-08)
@@ -62,6 +62,7 @@ Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py
 - **Salida validada contra un esquema cerrado.** Solo los campos pedidos; la duración debe ser una de las permitidas; el texto tiene un largo máximo y se rechaza entero si usa lenguaje clínico (diagnóstico, tratamiento, dolor, enfermedad…). Cualquier salida fuera del esquema responde 502 `language_model_unavailable`.
 - **`generated` siempre es `true`:** el frontend debe mostrar el texto como generado automáticamente.
 - **Reintento y caché.** Si el modelo responde 429 o 503 con una espera de hasta 3 s (`retry-after`), se espera y se reintenta una vez. La misma pregunta se responde desde una caché en memoria durante una hora, mientras la función siga viva. Límite de 1024 tokens generados.
+- **Cuota diaria (ADR-54).** Cada cuenta tiene 30 llamadas al día (UTC), compartidas por los tres puntos. Se gasta una después de las comprobaciones de la petición y solo si la respuesta no está en la caché, justo antes de llamar al modelo; una respuesta de la caché no gasta cuota. Agotada la cuota responde 429 `rate_limited` sin llamar al modelo. Una llamada que el modelo no llega a responder sí gasta su cuota: devolverla exigiría una migración nueva.
 - **Un solo error:** `language_model_unavailable` cubre todo lo que puede fallar con el modelo (sin red, cuota, clave inválida, salida rechazada). La app sigue entonces con el plan manual y el resumen de indicadores.
 - **Nada en los registros:** ni la clave ni el texto del modelo; solo el estado de la respuesta o el motivo del rechazo.
 
@@ -142,17 +143,20 @@ Get-Content .env | ForEach-Object { if ($_ -match '^\s*([A-Z_][A-Z0-9_]*)=(.*)$'
 .venv\Scripts\python -m uvicorn app.main:app --reload
 ```
 
-Comprobación: `http://127.0.0.1:8000/v1/health` responde `{"status":"ok","version":"0.1.0"}` y la documentación OpenAPI está en `http://127.0.0.1:8000/docs`.
+Comprobación: `http://127.0.0.1:8000/v1/health` responde `{"status":"ok","version":"0.1.0","supabase":"ok"}` y la documentación OpenAPI está en `http://127.0.0.1:8000/docs`.
 
 ## Pruebas
 
 ```bash
-.venv/Scripts/python -m pytest
+.venv/Scripts/python -m pytest --cov   # pruebas con cobertura; falla por debajo del 70 %
+.venv/Scripts/python -m ruff check .   # linter
 ```
 
-Cubren la identidad (sin token, token mal firmado, caducado, de otro proyecto o sin segundo factor), las sesiones (guardar, repetir el envío, listar, leer, borrar, sesión ajena, datos inválidos y fallos de la base), el borrado de cuenta, el plan y el resumen con el modelo de lenguaje simulado (valores fuera del catálogo, salidas fuera del esquema o con lenguaje clínico, reintento, caché, consentimiento, que solo viajen cifras agregadas y que ni la clave ni el texto queden en los registros), el estado del servicio, CORS (origen permitido y no permitido, verificación previa), la carga de la configuración (variables ausentes o inválidas nombradas sin revelar valores, secretos ocultos, coincidencia con `.env.example`), el formato de los errores (también el 500 inesperado con CORS y su documentación en el OpenAPI), el punto de entrada y la coherencia de los archivos del proyecto. La integración continua (`.github/workflows/ci.yml`) instala `requirements-dev.txt` con el Python de `.python-version` y ejecuta la misma batería.
+La cobertura (`pytest-cov`, umbral del 70 % de la especificación) y las reglas de `ruff` se configuran en `pyproject.toml`.
 
-Dependencias: `requirements.txt` contiene solo las de ejecución, fijadas con todas sus transitivas, y la lista `dependencies` de `pyproject.toml` repite exactamente las mismas, porque Vercel instala las de `pyproject.toml` e ignora `requirements.txt` cuando existen los dos (una prueba falla si difieren); `requirements-dev.txt` las incluye y añade pytest y uvicorn (servidor local).
+Cubren la identidad (sin token, token mal firmado, caducado, de otro proyecto o sin segundo factor), las sesiones (guardar, repetir el envío, listar, leer, borrar, sesión ajena, datos inválidos y fallos de la base), el borrado de cuenta, el plan y el resumen con el modelo de lenguaje simulado (valores fuera del catálogo, salidas fuera del esquema o con lenguaje clínico, reintento, caché, consentimiento, que solo viajen cifras agregadas y que ni la clave ni el texto queden en los registros), el estado del servicio, CORS (origen permitido y no permitido, verificación previa), la carga de la configuración (variables ausentes o inválidas nombradas sin revelar valores, secretos ocultos, coincidencia con `.env.example`), el formato de los errores (también el 500 inesperado con CORS y su documentación en el OpenAPI), el punto de entrada y la coherencia de los archivos del proyecto. La integración continua (`.github/workflows/ci.yml`) tiene tres trabajos. El primero instala `requirements-dev.txt` con el Python de `.python-version`, pasa `ruff` y ejecuta la batería con cobertura. El segundo instala `training/requirements.txt` y ejecuta las pruebas de `training/`. El tercero levanta la base local con la CLI de Supabase, aplica las migraciones en orden y ejecuta `supabase/tests/*.sql`, igual que en «Probar las migraciones en local».
+
+Dependencias: `requirements.txt` contiene solo las de ejecución, fijadas con todas sus transitivas, y la lista `dependencies` de `pyproject.toml` repite exactamente las mismas, porque Vercel instala las de `pyproject.toml` e ignora `requirements.txt` cuando existen los dos (una prueba falla si difieren); `requirements-dev.txt` las incluye y añade pytest, pytest-cov, ruff y uvicorn (servidor local).
 
 ## Despliegue en Vercel
 
@@ -171,8 +175,11 @@ El esquema vive como migraciones SQL en `supabase/migrations/`, una por cambio:
 
 - `20260928000000_initial_schema.sql`: `profiles`, `plans`, `sessions`, `session_metrics` y `model_versions`, con sus políticas de propiedad.
 - `20261011000000_cloud_sessions.sql`: consentimiento en `profiles`, los campos de una sesión del dispositivo, el segundo factor (`aal2`) como política restrictiva en `sessions` y `session_metrics`, y las funciones `save_session`, `list_sessions`, `get_session` y `delete_session`, que la API llama con el token de la persona.
-
 - `20261012000000_training_recordings.sql`: `training_recordings` (grabaciones guiadas, con segundo factor y borrables por su dueño), `training_assets` (archivos del entrenamiento, solo para la clave de servicio), el archivo de cada versión en `model_versions` y las funciones `save_training_recording`, `list_training_recordings`, `delete_training_recording` y `current_classifier`. Su prueba es `supabase/tests/training_recordings_test.sql`, que se ejecuta igual que la anterior.
+- `20261020000000_pulse_only_sessions.sql`: `signal_mode` en `sessions` para las sesiones de solo pulso (ADR-51); las sesiones anteriores quedan con intervalos entre latidos. Vuelve a crear `save_session`, `list_sessions` y `get_session` con el campo nuevo, sin cambiar propiedad, consentimiento ni segundo factor.
+- `20261102000000_language_model_quota.sql`: la cuota diaria del modelo de lenguaje (ADR-54). Crea la tabla `language_model_usage`, con RLS y sin políticas, y la función `consume_language_model_quota`, `security definer` y concedida solo a `authenticated`.
+- `20261102010000_database_limits.sql`: la base repite los límites que comprueba la API (tamaños, rangos y cotas por muestra) con restricciones `CHECK ... NOT VALID`, que valen para toda fila nueva sin revisar las existentes.
+- `20261114000000_account_storage_limits.sql`: como mucho 2000 sesiones y 20 grabaciones guiadas por cuenta (ADR-63). Un disparador `before insert` cuenta las filas de la cuenta, con un bloqueo por cuenta, y rechaza la nueva con `54000`, que la API responde como 409 `limit_reached`. Reenviar una sesión guardada sigue funcionando. Su prueba es `supabase/tests/account_limits_test.sql`.
 
 Todas las tablas tienen seguridad a nivel de fila (RLS), y una prueba lo comprueba. Las migraciones nunca se aplican a la base remota desde aquí: se copian en el *SQL Editor* del panel de Supabase, en orden.
 

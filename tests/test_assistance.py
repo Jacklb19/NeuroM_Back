@@ -14,10 +14,10 @@ from app.constants import (
     LANGUAGE_MODEL_DAILY_CALLS,
     LANGUAGE_MODEL_MAX_OUTPUT_TOKENS,
     LANGUAGE_MODEL_QUOTA_FUNCTION,
-    PROGRESS_SUMMARY_PATH,
     PLAN_DURATIONS_MINUTES,
     PLAN_NOTE_MAX_CHARS,
     PLAN_SUGGESTION_PATH,
+    PROGRESS_SUMMARY_PATH,
     SESSION_SUMMARY_SUFFIX,
     SESSIONS_PATH,
 )
@@ -258,6 +258,48 @@ def test_once_the_quota_is_used_up_the_model_is_not_asked(
     assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
     assert response.json() == {"code": ErrorCode.RATE_LIMITED}
     assert language_model.requests == []
+
+
+def test_an_answer_from_the_cache_spends_no_quota(
+    client: TestClient, supabase: FakeSupabase, language_model: FakeLanguageModel, headers: dict[str, str]
+) -> None:
+    language_model.answers = [chat_answer(PLAN_ANSWER)]
+
+    first = client.post(PLAN_URL, json=PLAN_REQUEST, headers=headers)
+    again = client.post(PLAN_URL, json=PLAN_REQUEST, headers=headers)
+
+    assert first.status_code == again.status_code == HTTPStatus.OK
+    assert len(language_model.requests) == 1
+    assert [call.name for call in supabase.calls] == [LANGUAGE_MODEL_QUOTA_FUNCTION]
+
+
+def test_with_the_quota_used_up_only_cached_answers_are_given(
+    client: TestClient, supabase: FakeSupabase, language_model: FakeLanguageModel, headers: dict[str, str]
+) -> None:
+    language_model.answers = [chat_answer(PLAN_ANSWER)]
+    assert client.post(PLAN_URL, json=PLAN_REQUEST, headers=headers).status_code == HTTPStatus.OK
+    supabase.results[LANGUAGE_MODEL_QUOTA_FUNCTION] = False
+
+    cached = client.post(PLAN_URL, json=PLAN_REQUEST, headers=headers)
+    new_question = client.post(PLAN_URL, json=PLAN_REQUEST | {"local_hour": 9}, headers=headers)
+
+    # The cached answer costs the provider nothing; a new question still needs quota.
+    assert cached.status_code == HTTPStatus.OK
+    assert new_question.status_code == HTTPStatus.TOO_MANY_REQUESTS
+    assert new_question.json() == {"code": ErrorCode.RATE_LIMITED}
+    assert len(language_model.requests) == 1
+
+
+def test_a_retry_of_the_model_spends_the_quota_once(
+    client: TestClient, supabase: FakeSupabase, language_model: FakeLanguageModel, headers: dict[str, str]
+) -> None:
+    language_model.answers = [busy("0"), chat_answer(PLAN_ANSWER)]
+
+    response = client.post(PLAN_URL, json=PLAN_REQUEST, headers=headers)
+
+    assert response.status_code == HTTPStatus.OK
+    assert len(language_model.requests) == 2
+    assert [call.name for call in supabase.calls] == [LANGUAGE_MODEL_QUOTA_FUNCTION]
 
 
 def test_a_refused_request_spends_no_quota(

@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
@@ -28,6 +29,25 @@ _REST: Final = "/rest/v1"
 _TIMEOUT_SECONDS: Final = 30
 _PAGE: Final = 500
 """Rows asked for at a time; a recording weighs a few kilobytes."""
+REQUIRED_VARIABLES: Final = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
+_URL_SCHEMES: Final = ("https://", "http://")
+
+
+def check_environment(environ: Mapping[str, str] = os.environ) -> None:
+    """Stop with a clear message before any request when the variables are missing.
+
+    Without it, an empty ``SUPABASE_URL`` (a secret that was never defined in
+    the workflow) surfaced as ``ValueError: unknown url type``. The message
+    names the variables, never their values.
+    """
+    missing = [name for name in REQUIRED_VARIABLES if not environ.get(name, "").strip()]
+    if missing:
+        raise SystemExit(
+            f"missing environment variables: {', '.join(missing)}. "
+            "Define them in the environment, or as repository secrets for the training workflow."
+        )
+    if not environ["SUPABASE_URL"].strip().startswith(_URL_SCHEMES):
+        raise SystemExit("SUPABASE_URL must be the project URL, starting with https://")
 
 
 def _request(method: str, path: str, body: object | None = None, prefer: str | None = None) -> Any:
@@ -106,8 +126,10 @@ def main() -> None:
 
     match sys.argv[1:]:
         case ["fetch", export_path]:
+            check_environment()
             fetch(Path(export_path), datetime.now(UTC).isoformat())
         case ["upload-cache"]:
+            check_environment()
             upload_cache()
         case _:
             raise SystemExit(__doc__)

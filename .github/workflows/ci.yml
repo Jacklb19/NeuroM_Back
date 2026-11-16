@@ -26,4 +26,48 @@ jobs:
             requirements-dev.txt
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pip check
-      - run: python -m pytest
+      - name: Lint
+        run: python -m ruff check .
+      # The threshold (70 %, from the specification) lives in pyproject.toml.
+      - name: Tests with coverage
+        run: python -m pytest --cov
+
+  training:
+    name: Training scripts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: training
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: '.python-version'
+          cache: 'pip'
+          cache-dependency-path: training/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      # No secret and no network: the tests only read files written here.
+      - run: python -m unittest test_collected test_release test_store
+
+  database:
+    name: Migrations and SQL tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The Supabase CLI (fixed version, no sign-in) starts only the database and applies every
+      # migration in order, on a copy of supabase/ outside the checkout. Nothing remote is touched.
+      - name: Start the local database
+        run: |
+          mkdir -p "$RUNNER_TEMP/sb-local"
+          cp -r supabase "$RUNNER_TEMP/sb-local/"
+          npx --yes supabase@2.120.0 db start --workdir "$RUNNER_TEMP/sb-local"
+      - name: Run the SQL tests
+        run: |
+          for test in supabase/tests/*.sql; do
+            echo "::group::$test"
+            docker exec -i supabase_db_neuromelody-local psql -U postgres -v ON_ERROR_STOP=1 < "$test"
+            echo "::endgroup::"
+          done
+      - name: Stop the local database
+        if: always()
+        run: npx --yes supabase@2.120.0 stop --workdir "$RUNNER_TEMP/sb-local" --no-backup

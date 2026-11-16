@@ -10,6 +10,13 @@ pluggy==1.6.0
 Pygments==2.21.0
 pytest==9.1.1
 
+# Coverage of the test run, with the threshold in pyproject.toml.
+coverage==7.17.3
+pytest-cov==7.1.0
+
+# Linter, with its rules in pyproject.toml.
+ruff==0.17.5
+
 # FastAPI's TestClient is built on httpx2, which requirements.txt already pins
 # because the API uses it to call Supabase.
 

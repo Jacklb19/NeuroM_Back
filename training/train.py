@@ -27,6 +27,7 @@ import json
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Final
 
@@ -123,7 +124,7 @@ def fit_temperature(truth: NDArray, scores: NDArray) -> float:
 def reliability(truth: NDArray, predicted: NDArray, probabilities: NDArray) -> list[dict[str, float | int]]:
     confidence = probabilities.max(axis=1)
     table = []
-    for low, high in zip(CONFIDENCE_BINS[:-1], CONFIDENCE_BINS[1:], strict=True):
+    for low, high in pairwise(CONFIDENCE_BINS):
         inside = (confidence >= low) & (confidence < high)
         if inside.any():
             table.append({

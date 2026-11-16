@@ -1,0 +1,40 @@
+# Weekly update proposals (ADR-20): they open against dev, never main.
+# Major versions are left out on purpose: they are upgraded by hand, with a plan.
+# The API pins its packages in pyproject.toml and requirements*.txt alike, and a
+# test checks both lists agree: an update that touches only one fails CI.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      minor-and-patch:
+        update-types: ['minor', 'patch']
+
+  # The training job has its own pinned list, which never reaches production.
+  - package-ecosystem: pip
+    directory: /training
+    target-branch: dev
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      training:
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
