@@ -2,7 +2,7 @@
 
 Código que entrena el modelo que el frontend ejecuta en el navegador (ADR-32). No forma parte de la API: no se despliega ni se importa desde `app/`.
 
-La ficha del modelo, con sus datos, resultados y límites, está en `../../front/docs/modelo.md`.
+La ficha del modelo, con sus datos, resultados y límites, está en [`modelo.md`](https://github.com/Jacklb19/NeuroMelody/blob/main/docs/modelo.md) del frontend. Los comandos de abajo suponen los dos repositorios clonados uno junto al otro (`front/` y `back/`).
 
 ## Pasos
 
