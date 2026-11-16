@@ -1,8 +1,9 @@
 """What the language model writes for the person (Table 15, RF-13 and RF-15; ADR-08).
 
-Two endpoints, both outside the control loop (ADR-05): a plan proposed from
-the goals the person chose, and a finished session told in plain words. Every
-text they return is marked as generated automatically.
+Endpoints outside the control loop (ADR-05): a length proposed from the goals
+the person chose, a whole plan composed from a short text they wrote (ADR-68),
+a finished session told in plain words and the progress explained. Every text
+they return is marked as generated automatically.
 """
 
 from http import HTTPStatus
@@ -19,9 +20,16 @@ from app.assistance import (
     suggest_plan,
     summarize_session,
 )
-from app.constants import PLAN_SUGGESTION_PATH, PROGRESS_SUMMARY_PATH, SESSION_SUMMARY_SUFFIX, SESSIONS_PATH
+from app.constants import (
+    PLAN_COMPOSE_PATH,
+    PLAN_SUGGESTION_PATH,
+    PROGRESS_SUMMARY_PATH,
+    SESSION_SUMMARY_SUFFIX,
+    SESSIONS_PATH,
+)
 from app.errors import ApiError, ErrorCode
 from app.language_model import LanguageModelGateway
+from app.plan_compose import ComposedPlan, ComposeRequest, compose_plan
 from app.progress_assistance import ProgressNarrative, ProgressRequest, explain_progress
 from app.quota import language_model_quota
 from app.security import Identity, current_identity, gateway_of
@@ -70,6 +78,21 @@ async def propose_plan(plan: PlanRequest, identity: Account, model: LanguageMode
     that reaches the model spends one of the account's daily calls (ADR-54).
     """
     return await suggest_plan(plan, model, language_model_quota(supabase, identity))
+
+
+@router.post(PLAN_COMPOSE_PATH, summary="Compose a whole session plan from a short text")
+async def compose(request: ComposeRequest, identity: Account, model: LanguageModel, supabase: Gateway) -> ComposedPlan:
+    """Goal, length, sound world and mode, each from its catalog, for what the person wrote (ADR-68).
+
+    The text is sent only when the request says the person agreed
+    (``consent``, which pressing "send" states). It is neither stored, cached
+    nor logged, so an account is enough and the second factor is not asked
+    for. Each call that reaches the model spends one of the account's daily
+    calls (ADR-54).
+    """
+    if not request.consent:
+        raise ApiError(HTTPStatus.FORBIDDEN, ErrorCode.CONSENT_REQUIRED)
+    return await compose_plan(request, model, language_model_quota(supabase, identity))
 
 
 @router.post(_SUMMARY_PATH, summary="Tell a session in plain words")
