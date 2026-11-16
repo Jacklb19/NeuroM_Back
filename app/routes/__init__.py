@@ -4,7 +4,7 @@ from typing import Final
 
 from fastapi import APIRouter
 
-from app.routes import account, assistance, health, sessions, training
+from app.routes import account, assistance, health, melodies, sessions, training
 
 API_ROUTERS: Final[tuple[APIRouter, ...]] = (
     health.router,
@@ -12,5 +12,6 @@ API_ROUTERS: Final[tuple[APIRouter, ...]] = (
     account.router,
     assistance.router,
     training.router,
+    melodies.router,
 )
 """Routers mounted under ``API_PREFIX``; add a resource's router here to publish it."""

@@ -34,6 +34,9 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 | `POST /recordings` | Guarda una grabación guiada que la persona acepta enviar para entrenar el modelo. | 201 si la crea; 200 si ya existía | 403 `consent_required`, 409 `limit_reached` (la cuenta ya guarda 20 grabaciones) |
 | `GET /recordings` | Lista las grabaciones enviadas, sin los latidos. | 200 | |
 | `DELETE /recordings/{id}` | Retira una grabación enviada. | 204 | 404 `not_found` |
+| `GET /melodies` | Las melodías que la persona guardó desde Escuchar (P-17), de la que cambió más reciente a la más antigua, en `melodies`. Basta una cuenta. | 200 | |
+| `PUT /melodies/{id}` | Guarda una melodía con el id que generó el dispositivo, con su duración (`duration_minutes`: 15, 30, 45 o 60). Si ya existe, conserva la versión con el `updated_at` más reciente (nombre y mezcla); lo que la hace sonar no cambia. | 201 si la crea; 200 si ya existía | 409 `limit_reached` (la cuenta ya guarda 50), 409 `session_conflict` (el id es de otra cuenta) |
+| `DELETE /melodies/{id}` | Borra una melodía guardada. | 204 | 404 `not_found` |
 | `GET /models/classifier` | La última versión publicada del clasificador, con su archivo. Basta una cuenta. | 200 | 404 `not_found` si no hay ninguna publicada |
 | `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 429 `rate_limited`, 502 `language_model_unavailable` |
 | `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 429 `rate_limited`, 502 `language_model_unavailable` |
@@ -42,7 +45,7 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no verifica), 403 `second_factor_required`, 422 `invalid_request` y 502 `storage_unavailable` (Supabase no respondió o respondió algo inesperado).
 
 - **Identidad (ADR-19):** el token se verifica con las claves públicas del proyecto de Supabase (firma ES256, emisor, audiencia y caducidad). Las claves se descargan una vez y se reutilizan. Cualquier fallo responde lo mismo, sin decir por qué.
-- **Segundo factor (ADR-10):** las cuatro rutas de sesiones y las tres de grabaciones exigen que el token diga `aal2`. Borrar la cuenta lo exige solo si la cuenta tiene un segundo factor verificado, para que una contraseña robada no baste.
+- **Segundo factor (ADR-10):** las cuatro rutas de sesiones y las tres de grabaciones exigen que el token diga `aal2`. Las tres de melodías no: una melodía es una semilla y unas elecciones de sonido, no un dato de salud. Borrar la cuenta lo exige solo si la cuenta tiene un segundo factor verificado, para que una contraseña robada no baste.
 - **Doble barrera:** la API llama a Supabase con el token de la persona, así que las políticas RLS vuelven a comprobar la propiedad y el segundo factor. Por eso la sesión de otra persona responde igual que una que no existe. La clave de servicio se usa únicamente para borrar la cuenta.
 - **Envío idempotente (ADR-18):** el id de la sesión lo genera el dispositivo. Enviar dos veces la misma sesión no la duplica; la segunda vez solo actualiza la valoración final, que es lo único que la persona completa después.
 - **Consentimiento:** el frontend lo guarda en `profiles.sync_consent_at` y la base de datos rechaza guardar sesiones sin él.
@@ -106,7 +109,8 @@ app/
   quota.py        Cuota diaria de llamadas al modelo por cuenta (ADR-54).
   assistance.py   Qué se le pregunta al modelo y qué se acepta de él (plantillas y esquema cerrado).
   progress_assistance.py  Explicaciones cerradas del progreso (ADR-48).
-  routes/         Un módulo por recurso: health.py, sessions.py, account.py, training.py y assistance.py.
+  melodies.py     Forma de una melodía guardada (P-17): catálogos de sonido y rangos.
+  routes/         Un módulo por recurso: health.py, sessions.py, account.py, training.py, assistance.py y melodies.py.
 tests/            Pruebas con pytest (sin secretos reales; Supabase se simula en memoria).
 supabase/         Migraciones SQL (ADR-22), su prueba y la configuración de la base local.
 training/         Entrenamiento del clasificador (ADR-32); no forma parte de la API.
@@ -191,6 +195,8 @@ El esquema vive como migraciones SQL en `supabase/migrations/`, una por cambio:
 - `20261102000000_language_model_quota.sql`: la cuota diaria del modelo de lenguaje (ADR-54). Crea la tabla `language_model_usage`, con RLS y sin políticas, y la función `consume_language_model_quota`, `security definer` y concedida solo a `authenticated`.
 - `20261102010000_database_limits.sql`: la base repite los límites que comprueba la API (tamaños, rangos y cotas por muestra) con restricciones `CHECK ... NOT VALID`, que valen para toda fila nueva sin revisar las existentes.
 - `20261114000000_account_storage_limits.sql`: como mucho 2000 sesiones y 20 grabaciones guiadas por cuenta (ADR-63). Un disparador `before insert` cuenta las filas de la cuenta, con un bloqueo por cuenta, y rechaza la nueva con `54000`, que la API responde como 409 `limit_reached`. Reenviar una sesión guardada sigue funcionando. Su prueba es `supabase/tests/account_limits_test.sql`.
+- `20261117000000_melodies.sql`: la tabla `melodies` (P-17), con RLS por dueño y sin segundo factor, un `CHECK` por columna con los catálogos y rangos de la app, un tope de 50 por cuenta con el mismo disparador que ADR-63 y las funciones `save_melody` (se queda con la versión más reciente), `list_melodies` y `delete_melody`. Se borran en cascada con la cuenta. Su prueba es `supabase/tests/melodies_test.sql`.
+- `20261117010000_melody_duration.sql`: la duración de cada melodía (ADR-67), 15, 30, 45 o 60 minutos, con 30 para las guardadas antes, y la comprobación de que el punto guardado cae dentro. Vuelve a crear `save_melody` y `list_melodies` con el campo nuevo.
 
 Todas las tablas tienen seguridad a nivel de fila (RLS), y una prueba lo comprueba. Las migraciones nunca se aplican a la base remota desde aquí: se copian en el *SQL Editor* del panel de Supabase, en orden.
 

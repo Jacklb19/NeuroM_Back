@@ -31,6 +31,27 @@ RECORDINGS_PATH: Final = "/recordings"
 CLASSIFIER_PATH: Final = "/models/classifier"
 """The latest published version of the classifier (Table 15)."""
 
+MELODIES_PATH: Final = "/melodies"
+"""Melodies the person saved from the listening screen (P-17), relative to ``API_PREFIX``."""
+
+MAX_MELODIES_PER_ACCOUNT: Final = 50
+"""Most saved melodies one account keeps in the cloud; the database enforces it (ADR-63, P-17)."""
+
+MELODY_NAME_MAX_CHARS: Final = 60
+"""Longest name of a melody. Mirrors the frontend's ``MELODY_NAME_LIMIT``."""
+
+MAX_MELODY_SEED: Final = 2**31 - 1
+"""Largest seed of the synthesizer: a non-negative 32-bit integer (mulberry32)."""
+
+MAX_MELODY_POSITION_SECONDS: Final = 2 * 60 * 60
+"""Furthest point a melody can be saved at. Mirrors the frontend's ``MAX_START_AT_S``."""
+
+MELODY_DURATIONS_MINUTES: Final = (15, 30, 45, 60)
+"""Lengths a melody can have (ADR-67). Mirrors the frontend's ``LISTEN_DURATIONS_MIN``."""
+
+MAX_SYNTHESIS_VERSION: Final = 32_767
+"""Largest version of the synthesizer a melody can name: what a ``smallint`` column holds."""
+
 RECORDING_STAGES: Final = ("rest", "slow_breathing", "demanding_task")
 """Stages of a guided recording, in order. Mirrors the frontend's ``COLLECTION_STAGE_IDS``
 (src/features/collection/collectionProtocol.ts) and ``training/collected.py``."""
@@ -210,8 +231,8 @@ VERCEL_PREVIEW_DOMAIN: Final = "vercel.app"
 ALLOWED_ORIGIN_SCHEMES: Final = frozenset({"http", "https"})
 """Schemes accepted for a CORS origin: https in production, http for local development."""
 
-CORS_ALLOWED_METHODS: Final = ("GET", "POST", "DELETE")
-"""Methods the frontend may use cross-origin: Table 15 plus the DELETE endpoints of ADR-18."""
+CORS_ALLOWED_METHODS: Final = ("GET", "POST", "PUT", "DELETE")
+"""Methods the frontend may use cross-origin: Table 15, the DELETE endpoints of ADR-18 and saving a melody (P-17)."""
 
 CORS_ALLOWED_HEADERS: Final = ("Authorization", "Content-Type")
 """Request headers the frontend may send: the Supabase JWT (ADR-19) and JSON bodies."""
