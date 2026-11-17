@@ -39,6 +39,7 @@ Todos bajo `/v1`. Salvo el estado del servicio, piden `Authorization: Bearer <to
 | `DELETE /melodies/{id}` | Borra una melodía guardada. | 204 | 404 `not_found` |
 | `GET /models/classifier` | La última versión publicada del clasificador, con su archivo. Basta una cuenta. | 200 | 404 `not_found` si no hay ninguna publicada |
 | `POST /plans/suggest` | Propone la duración de una sesión para los objetivos elegidos, con una nota. No guarda nada. | 200 | 429 `rate_limited`, 502 `language_model_unavailable` |
+| `POST /plans/compose` | Arma un plan completo (intención, duración, mundo sonoro y modo) a partir de un texto breve que escribe la persona (ADR-68). El texto no se guarda, no entra en la caché ni en los registros. | 200 | 403 `consent_required`, 429 `rate_limited`, 502 `language_model_unavailable` |
 | `POST /sessions/{id}/summary` | Cuenta en palabras sencillas una sesión, a partir de las cifras que envía la app. No lee ni guarda nada. | 200 | 403 `consent_required`, 429 `rate_limited`, 502 `language_model_unavailable` |
 | `POST /progress/summary` | Elige una explicación verificada de hasta tres comparaciones calculadas en el dispositivo (ADR-48). No lee ni guarda historial. | 200 | 403 `consent_required`, 429 `rate_limited`, 502 `language_model_unavailable` |
 
@@ -58,7 +59,7 @@ Comunes a las rutas protegidas: 401 `unauthenticated` (sin token, o uno que no v
 
 ### Modelo de lenguaje (ADR-05, ADR-08)
 
-Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py`. Nunca participa en el lazo de control: solo propone un plan y redacta un resumen.
+Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py`. Nunca participa en el lazo de control: solo propone un plan inicial y redacta textos descriptivos.
 
 | | `POST /plans/suggest` | `POST /sessions/{id}/summary` |
 |---|---|---|
@@ -66,7 +67,7 @@ Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py
 | Cuerpo | `{"goals": [...], "local_hour": 0–23 o null, "locale": "es" o "en"}`. Al menos un objetivo, sin repetir | `{"consent": true, "locale": "es" o "en", "figures": {...}}` |
 | Respuesta | `{"duration_minutes": 10, 15, 20, 30, 45 o 60, "note": "...", "generated": true, "model": "..."}` | `{"text": "...", "generated": true, "model": "..."}` |
 
-- **Solo valores cerrados hacia el modelo.** No se acepta texto libre de la persona: los objetivos son los del catálogo y un campo desconocido responde 422. Las cifras del resumen las envía el navegador, que ya las muestra en la pantalla de resumen, así que la sesión no tiene que estar guardada en la nube. `figures` es un esquema cerrado: `planned_minutes`, `listened_minutes`, `goals` (del catálogo), `pulse_start` y `pulse_end` (20 a 250), `variation_start` y `variation_end` (0 a 1000 ms), `minutes_by_state` (`high`, `uncertain` y `low`, o `null`), `rating_before` y `rating_after` (0 a 10). Solo números enteros dentro de rango y valores de catálogo; un campo desconocido, un texto o un número fuera de rango responden 422 sin llamar al modelo. No caben muestras, fechas ni identificadores, y el `id` de la ruta no se usa ni se envía.
+- **Solo valores cerrados hacia el modelo,** salvo en `POST /plans/compose` (ver abajo). En los demás puntos no se acepta texto libre de la persona: los objetivos son los del catálogo y un campo desconocido responde 422. Las cifras del resumen las envía el navegador, que ya las muestra en la pantalla de resumen, así que la sesión no tiene que estar guardada en la nube. `figures` es un esquema cerrado: `planned_minutes`, `listened_minutes`, `goals` (del catálogo), `pulse_start` y `pulse_end` (20 a 250), `variation_start` y `variation_end` (0 a 1000 ms), `minutes_by_state` (`high`, `uncertain` y `low`, o `null`), `rating_before` y `rating_after` (0 a 10). Solo números enteros dentro de rango y valores de catálogo; un campo desconocido, un texto o un número fuera de rango responden 422 sin llamar al modelo. No caben muestras, fechas ni identificadores, y el `id` de la ruta no se usa ni se envía.
 - **Consentimiento.** El resumen exige `"consent": true`; con `false` responde 403 `consent_required` sin llamar al modelo.
 - **Salida validada contra un esquema cerrado.** Solo los campos pedidos; la duración debe ser una de las permitidas; el texto tiene un largo máximo y se rechaza entero si usa lenguaje clínico (diagnóstico, tratamiento, dolor, enfermedad…). Cualquier salida fuera del esquema responde 502 `language_model_unavailable`.
 - **`generated` siempre es `true`:** el frontend debe mostrar el texto como generado automáticamente.
@@ -74,6 +75,15 @@ Groq con `openai/gpt-oss-20b`, llamado con `httpx2` desde `app/language_model.py
 - **Cuota diaria (ADR-54).** Cada cuenta tiene 30 llamadas al día (UTC), compartidas por los tres puntos. Se gasta una después de las comprobaciones de la petición y solo si la respuesta no está en la caché, justo antes de llamar al modelo; una respuesta de la caché no gasta cuota. Agotada la cuota responde 429 `rate_limited` sin llamar al modelo. Una llamada que el modelo no llega a responder sí gasta su cuota: devolverla exigiría una migración nueva.
 - **Un solo error:** `language_model_unavailable` cubre todo lo que puede fallar con el modelo (sin red, cuota, clave inválida, salida rechazada). La app sigue entonces con el plan manual y el resumen de indicadores.
 - **Nada en los registros:** ni la clave ni el texto del modelo; solo el estado de la respuesta o el motivo del rechazo.
+
+**Plan a partir de un texto (ADR-68):** `POST /plans/compose` recibe `{"consent": true, "text": "...", "local_hour": 0–23 o null, "locale": "es" o "en"}`, con un texto de 1 a 300 caracteres, y responde `{"goal": id del catálogo o null, "duration_minutes": 10, 15, 20, 30, 45 o 60, "world": uno de los seis mundos, "mode": "adaptive" o "fixed", "note": "..." o null, "generated": true, "model": "..."}`. Es el único punto donde el modelo lee lo que escribió la persona, así que:
+
+- el texto viaja entre delimitadores (`<person_text>`), sin `<` ni `>`, y el modelo recibe la orden de tratarlo como datos;
+- no se guarda en la base, no pasa por la caché (cada envío pregunta al modelo y gasta cuota) y no se escribe en ningún registro;
+- toda elección se valida contra su catálogo; una salida inventada responde 502 `language_model_unavailable`;
+- la frase (`note`) describe solo el plan: si es larga, usa lenguaje clínico o habla del estado de la persona («te sientes», «estrés», «mejor»…), se descarta y el plan llega con `note: null`.
+
+Contrato en [`contrato-plan-compose.md`](https://github.com/Jacklb19/NeuroMelody/blob/main/docs/contrato-plan-compose.md).
 
 La cuenta de Groq debe tener activada la retención cero en *Data Controls* (ADR-08).
 

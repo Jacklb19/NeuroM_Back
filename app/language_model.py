@@ -86,7 +86,13 @@ class LanguageModelGateway:
         return LANGUAGE_MODEL
 
     async def ask[Answer](
-        self, system: str, user: str, validate: Callable[[dict[str, Any]], Answer], before_call: BeforeCall
+        self,
+        system: str,
+        user: str,
+        validate: Callable[[dict[str, Any]], Answer],
+        before_call: BeforeCall,
+        *,
+        cache: bool = True,
     ) -> Answer:
         """Ask one question and return its validated answer.
 
@@ -94,12 +100,15 @@ class LanguageModelGateway:
         ``InvalidModelOutput``; only validated answers are returned or cached.
         ``before_call`` runs after the cache and before the model, so an answer
         the cache already holds spends no quota; it may refuse by raising.
-        ``Any`` mirrors JSON. Every failure is the same ``ApiError``.
+        With ``cache=False`` the question is neither looked up nor kept: a
+        question built from text the person wrote must leave nothing behind
+        (ADR-68). ``Any`` mirrors JSON. Every failure is the same ``ApiError``.
         """
-        cache_key = hashlib.sha256(f"{system}\x00{user}".encode()).hexdigest()
-        cached = self._cached(cache_key)
-        if cached is not None:
-            return cached  # type: ignore[no-any-return]
+        cache_key = hashlib.sha256(f"{system}\x00{user}".encode()).hexdigest() if cache else None
+        if cache_key is not None:
+            cached = self._cached(cache_key)
+            if cached is not None:
+                return cached  # type: ignore[no-any-return]
         await before_call()
         try:
             answer = validate(await self._complete(system, user))
@@ -107,7 +116,8 @@ class LanguageModelGateway:
             # Only the reason, written by this code: the text of the model stays out of the log.
             logger.warning("Language model answer rejected: %s", error)
             raise unavailable() from None
-        self._remember(cache_key, answer)
+        if cache_key is not None:
+            self._remember(cache_key, answer)
         return answer
 
     async def _complete(self, system: str, user: str) -> dict[str, Any]:

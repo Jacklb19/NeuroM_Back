@@ -69,6 +69,15 @@ purpose (training filters them like the app does), but not absurd values."""
 PLAN_SUGGESTION_PATH: Final = "/plans/suggest"
 """Plan proposed by the language model (Table 15, RF-13), relative to ``API_PREFIX``."""
 
+PLAN_COMPOSE_PATH: Final = "/plans/compose"
+"""Whole plan composed by the language model from a short text the person writes (ADR-68)."""
+
+PLAN_TEXT_MAX_CHARS: Final = 300
+"""Longest text a person may write to have a plan composed. Mirrors the frontend's ``PLAN_TEXT_MAX_CHARS``."""
+
+PLAN_COMPOSE_NOTE_MAX_CHARS: Final = 160
+"""Longest sentence kept with a composed plan; a longer one is dropped, never cut."""
+
 SESSION_SUMMARY_SUFFIX: Final = "/summary"
 """Summary of one session written by the language model (Table 15, RF-15); follows the session path."""
 

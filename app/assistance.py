@@ -32,7 +32,7 @@ from app.constants import (
 from app.language_model import BeforeCall, InvalidModelOutput, LanguageModelGateway
 from app.schemas import ActivationState, Goal, Locale
 
-_LANGUAGE_NAMES: Final = {Locale.ES: "Spanish", Locale.EN: "English"}
+LANGUAGE_NAMES: Final = {Locale.ES: "Spanish", Locale.EN: "English"}
 """How each interface language is named to the model."""
 
 _UNIT_WORDS: Final = {
@@ -41,7 +41,7 @@ _UNIT_WORDS: Final = {
 }
 """The units of the figures as the text must spell them: the model copies an example in another language."""
 
-_GOAL_MEANINGS: Final = {
+GOAL_MEANINGS: Final = {
     Goal.RELAX: "to relax",
     Goal.REST_BEFORE_SLEEP: "to rest before going to sleep",
     Goal.CALM_AFTER_ACTIVITY: "to calm down after an activity",
@@ -59,7 +59,7 @@ _STATE_NAMES: Final = {
 
 _UNKNOWN: Final = "unknown"
 
-_CLINICAL_WORDING: Final = re.compile(
+CLINICAL_WORDING: Final = re.compile(
     r"diagn[oó]s|tratamiento|treatment|terap|therap|medicament|medicaci[oó]n|medication|medicine|m[eé]dic[oa]|doctor"
     r"|enfermedad|disease|illness|trastorno|disorder|s[ií]ntoma|symptom|dolor|pain\b|patol[oó]g|patholog"
     r"|cl[ií]nic|clinical|arritmi|arrhythm|\bcura[rs]?\b|\bcure[sd]?\b|ansiedad|anxiety|depresi[oó]n|depression",
@@ -68,7 +68,7 @@ _CLINICAL_WORDING: Final = re.compile(
 """Words a generated text may not contain. The app describes; it does not diagnose,
 measure pain or suggest treatment. A text that uses one is refused whole."""
 
-_FORBIDDEN_FOR_THE_MODEL: Final = (
+FORBIDDEN_FOR_THE_MODEL: Final = (
     "health, pain, illness, disease, diagnosis, symptoms, treatment, therapy, medicine, doctors, "
     "anxiety, depression, or anything clinical"
 )
@@ -117,7 +117,7 @@ def _plain_text(text: str) -> str:
     stripped = text.strip()
     if not stripped:
         raise ValueError("empty text")
-    if _CLINICAL_WORDING.search(stripped):
+    if CLINICAL_WORDING.search(stripped):
         raise ValueError("clinical wording")
     return stripped
 
@@ -259,10 +259,10 @@ async def suggest_plan(request: PlanRequest, model: LanguageModelGateway, before
     system = _PLAN_SYSTEM.format(
         durations=", ".join(str(minutes) for minutes in PLAN_DURATIONS_MINUTES),
         note_chars=PLAN_NOTE_MAX_CHARS,
-        language=_LANGUAGE_NAMES[request.locale],
-        forbidden=_FORBIDDEN_FOR_THE_MODEL,
+        language=LANGUAGE_NAMES[request.locale],
+        forbidden=FORBIDDEN_FOR_THE_MODEL,
     )
-    goals = "; ".join(f"{goal.value} ({_GOAL_MEANINGS[goal]})" for goal in request.goals)
+    goals = "; ".join(f"{goal.value} ({GOAL_MEANINGS[goal]})" for goal in request.goals)
     hour = _UNKNOWN if request.local_hour is None else str(request.local_hour)
     user = f"<session_request>\ngoals: {goals}\nhour_of_the_day_0_to_23: {hour}\n</session_request>"
     answer = await model.ask(system, user, lambda raw: _validated(_PlanAnswer, raw), before_call)
@@ -278,7 +278,7 @@ def figure_lines(figures: SessionFigures) -> str:
     lines = [
         f"planned_minutes: {figures.planned_minutes}",
         f"listened_minutes: {figures.listened_minutes}",
-        f"goals: {'; '.join(_GOAL_MEANINGS[goal] for goal in figures.goals) or 'none chosen'}",
+        f"goals: {'; '.join(GOAL_MEANINGS[goal] for goal in figures.goals) or 'none chosen'}",
         f"pulse_at_the_start_beats_per_minute: {_figure(figures.pulse_start)}",
         f"pulse_at_the_end_beats_per_minute: {_figure(figures.pulse_end)}",
         f"variation_between_beats_at_the_start_ms: {_figure(figures.variation_start)}",
@@ -298,8 +298,8 @@ async def summarize_session(
     """Ask the model to tell a session in plain words, from its aggregated figures (RF-15)."""
     system = _SUMMARY_SYSTEM.format(
         summary_chars=SUMMARY_MAX_CHARS,
-        language=_LANGUAGE_NAMES[locale],
-        forbidden=_FORBIDDEN_FOR_THE_MODEL,
+        language=LANGUAGE_NAMES[locale],
+        forbidden=FORBIDDEN_FOR_THE_MODEL,
         unknown=_UNKNOWN,
         units=_UNIT_WORDS[locale],
     )
